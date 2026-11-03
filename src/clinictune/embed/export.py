@@ -1,7 +1,10 @@
 """One-off export of a real foundation backbone to the ClinicTune ONNX contract.
 
 Needs the ``export`` extra (torch + transformers):  ``uv sync --extra export``.
-MedSigLIP is gated: accept the HAI-DEF terms on Hugging Face and ``hf auth login`` first.
+MedSigLIP and RETFound are gated: accept their terms on Hugging Face and ``hf auth login`` first.
+
+Every preset is exported so that its output is exactly the final-layer *patch* tokens: CLS and register
+tokens are dropped by taking the last ``grid * grid`` tokens, whatever the architecture prepends.
 """
 
 from __future__ import annotations
@@ -10,36 +13,59 @@ from pathlib import Path
 
 from clinictune.embed.backbone import BackboneSpec, sha256_file
 
+IMAGENET = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+
 PRESETS: dict[str, dict] = {
+    # Chest X-ray foundation encoder (Microsoft, MIT licence): DINOv2 ViT-B/14 trained on ~880k CXRs.
+    "rad-dino": {
+        "hf_id": "microsoft/rad-dino",
+        "input_size": 518,
+        "patch": 14,
+        "mean": (0.5307, 0.5307, 0.5307),
+        "std": (0.2583, 0.2583, 0.2583),
+        "task_hint": "tb",
+    },
     "medsiglip-448": {
         "hf_id": "google/medsiglip-448",
         "input_size": 448,
         "patch": 14,
         "mean": (0.5, 0.5, 0.5),
         "std": (0.5, 0.5, 0.5),
-        "drop_cls": False,
     },
     "dinov2-small": {
         "hf_id": "facebook/dinov2-small",
         "input_size": 224,
         "patch": 14,
-        "mean": (0.485, 0.456, 0.406),
-        "std": (0.229, 0.224, 0.225),
-        "drop_cls": True,
+        "mean": IMAGENET[0],
+        "std": IMAGENET[1],
+    },
+    "dinov2-base": {
+        "hf_id": "facebook/dinov2-base",
+        "input_size": 224,
+        "patch": 14,
+        "mean": IMAGENET[0],
+        "std": IMAGENET[1],
     },
 }
 
 
-def export_backbone(name: str, out_dir: str | Path, opset: int = 18) -> BackboneSpec:
+def export_backbone(name: str, out_dir: str | Path, opset: int = 18, size: int | None = None) -> BackboneSpec:
+    """Export ``name`` at ``size`` px (default: the preset's native resolution).
+
+    DINOv2-family models interpolate their position embeddings, so a smaller ``size`` trades accuracy for
+    CPU latency - that trade-off is measured, not assumed (see ``clinictune benchmark``).
+    """
     import torch
     from transformers import AutoModel
 
     preset = PRESETS[name]
+    size = size or preset["input_size"]
+    grid = size // preset["patch"]
+    n_tokens = grid * grid
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     model = AutoModel.from_pretrained(preset["hf_id"])
     vision = getattr(model, "vision_model", model).eval()
-    drop_cls = preset["drop_cls"]
 
     class Tokens(torch.nn.Module):
         def __init__(self) -> None:
@@ -48,9 +74,8 @@ def export_backbone(name: str, out_dir: str | Path, opset: int = 18) -> Backbone
 
         def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
             h = self.vision(pixel_values=pixel_values).last_hidden_state
-            return h[:, 1:, :] if drop_cls else h
+            return h[:, -n_tokens:, :]
 
-    size = preset["input_size"]
     dummy = torch.randn(2, 3, size, size)
     with torch.no_grad():
         ref = Tokens()(dummy)
@@ -66,13 +91,12 @@ def export_backbone(name: str, out_dir: str | Path, opset: int = 18) -> Backbone
         )
     path = out_dir / "backbone.onnx"
     program.save(str(path), external_data=True)
-
-    grid = size // preset["patch"]
-    if ref.shape[1] != grid * grid:
-        raise RuntimeError(f"expected {grid * grid} patch tokens, model produced {ref.shape[1]}")
+    if ref.shape[1] != n_tokens:
+        raise RuntimeError(f"expected {n_tokens} patch tokens, model produced {ref.shape[1]}")
     _verify(path, dummy.numpy(), ref.numpy())
+    label = name if size == preset["input_size"] else f"{name}@{size}"
     return BackboneSpec(
-        name=name,
+        name=label,
         onnx_file="backbone.onnx",
         sha256=sha256_file(path),
         input_size=size,
@@ -89,6 +113,6 @@ def _verify(path: Path, x, ref) -> None:  # type: ignore[no-untyped-def]
 
     sess = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     (out,) = sess.run(["tokens"], {"pixel_values": x})
-    err = float(np.abs(out - ref).max())
+    err = float(np.abs(out - ref).max() / (np.abs(ref).max() + 1e-6))
     if err > 1e-2:
-        raise RuntimeError(f"ONNX output differs from PyTorch by {err:.4f}")
+        raise RuntimeError(f"ONNX output differs from PyTorch by {err:.4f} (relative)")
