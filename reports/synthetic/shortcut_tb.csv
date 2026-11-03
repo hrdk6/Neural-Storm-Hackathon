@@ -1,0 +1,13 @@
+task,site,condition,roc_auc,n
+tb,tb_clinic_new,original,0.7716745234679238,160
+tb,tb_site_a,original,0.9984027777777778,360
+tb,tb_site_b,original,0.9885147583395398,360
+tb,tb_site_c,original,0.9898051948051949,360
+tb,tb_clinic_new,border_only,0.6460340233654437,160
+tb,tb_site_a,border_only,0.5511111111111111,360
+tb,tb_site_b,border_only,0.48312492650229316,360
+tb,tb_site_c,border_only,0.8084415584415585,360
+tb,tb_clinic_new,center_crop_80,0.6517729042836646,160
+tb,tb_site_a,center_crop_80,0.9880902777777777,360
+tb,tb_site_b,center_crop_80,0.9610364156638312,360
+tb,tb_site_c,center_crop_80,0.9772077922077922,360
