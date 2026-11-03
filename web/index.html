@@ -3,158 +3,252 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ClinicTune Screening Aid</title>
+  <meta name="theme-color" content="#F2F4F1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151C26" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="ClinicTune: a site-adaptive screening aid for tuberculosis on chest X-rays and diabetic retinopathy on fundus photos. Decision support, not a diagnosis.">
+  <title>ClinicTune</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/anek-latin-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="top">
+  <svg width="0" height="0" class="defs" aria-hidden="true" focusable="false">
+    <defs>
+      <!-- Slight ink bleed for the decision stamp -->
+      <filter id="ink" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="noise"/>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.6"/>
+      </filter>
+      <symbol id="i-lungs" viewBox="0 0 24 24"><path d="M12 3v7m0 0c0 2-1.5 3-3 3m3-3c0 2 1.5 3 3 3M8.5 6.5C5.5 7 3.5 11 3.5 15.5 3.5 18 4.6 20 7 20c2 0 3-1.4 3-3.5V11M15.5 6.5c3 .5 5 4.5 5 9 0 2.5-1.1 4.5-3.5 4.5-2 0-3-1.4-3-3.5V11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="13.2" cy="10.9" r="1" fill="currentColor"/></symbol>
+      <symbol id="i-refer" viewBox="0 0 24 24"><path d="M12 19V5m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-low" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-uncertain" viewBox="0 0 24 24"><path d="M9 9.2a3 3 0 1 1 4.4 2.7c-.9.5-1.4 1.1-1.4 2.1v.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="18.3" r="1.4" fill="currentColor"/></symbol>
+      <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4m0 0L7.5 8.5M12 4l4.5 4.5M4.5 15v3.5c0 .8.7 1.5 1.5 1.5h12c.8 0 1.5-.7 1.5-1.5V15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V4h10v5M7 17H5a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2M7 14h10v6H7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m11 12 8-8m-3 3 2.5 2.5M14 9l2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4L12 4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10v4.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></symbol>
+    </defs>
+  </svg>
+
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="masthead">
     <div class="brand">
-      <span class="logo" aria-hidden="true">+</span>
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26" rx="5" fill="var(--violet)"/><rect x="8" y="8" width="16" height="16" rx="2" fill="var(--lightbox-glow)"/><path d="M16 11v10M11 16h10" stroke="var(--violet)" stroke-width="3" stroke-linecap="round"/></svg>
       <div>
-        <strong>ClinicTune</strong>
-        <span class="sub">Screening aid &middot; decision support, not a diagnosis</span>
+        <p class="wordmark">ClinicTune</p>
+        <p class="tagline">Screening aid for tuberculosis and diabetic retinopathy. It does not diagnose.</p>
       </div>
     </div>
-    <div class="controls">
-      <label>Site
-        <select id="site-select"><option value="">Not onboarded (training-site settings)</option></select>
+    <div class="masthead-controls">
+      <label class="field compact">Clinic
+        <select id="site-select"><option value="">Not onboarded</option></select>
       </label>
-      <label>Note language
+      <label class="field compact">Note language
         <select id="lang">
           <option value="en">English</option>
-          <option value="hi">हिन्दी (draft)</option>
-          <option value="kn">ಕನ್ನಡ (draft)</option>
+          <option value="hi">हिन्दी</option>
+          <option value="kn">ಕನ್ನಡ</option>
         </select>
       </label>
-      <button id="key-btn" class="ghost" type="button" title="Set API key">Key</button>
+      <button id="key-btn" class="icon-button" type="button" aria-label="Set API key" title="Set API key"><svg><use href="#i-key"/></svg></button>
     </div>
   </header>
 
-  <div id="demo-banner" class="banner warn" hidden>
-    DEMO model trained on synthetic cartoon images. Outputs have no clinical meaning.
-  </div>
+  <p id="demo-banner" class="demo-banner" hidden>This server is running the demo model, trained on synthetic drawings. Its results mean nothing clinically.</p>
 
-  <nav class="tabs" role="tablist">
-    <button role="tab" aria-selected="true" data-tab="screen">Screen</button>
-    <button role="tab" aria-selected="false" data-tab="sites">Sites &amp; onboarding</button>
-    <button role="tab" aria-selected="false" data-tab="monitor">Monitoring</button>
-    <button role="tab" aria-selected="false" data-tab="about">About</button>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="t-screen" aria-controls="tab-screen" aria-selected="true" data-tab="screen">Screen</button>
+    <button role="tab" id="t-queue" aria-controls="tab-queue" aria-selected="false" data-tab="queue" tabindex="-1">Queue <span class="tab-count" id="queue-count" hidden></span></button>
+    <button role="tab" id="t-sites" aria-controls="tab-sites" aria-selected="false" data-tab="sites" tabindex="-1">Clinics</button>
+    <button role="tab" id="t-monitor" aria-controls="tab-monitor" aria-selected="false" data-tab="monitor" tabindex="-1">Monitoring</button>
+    <button role="tab" id="t-validation" aria-controls="tab-validation" aria-selected="false" data-tab="validation" tabindex="-1">Validation</button>
+    <button role="tab" id="t-about" aria-controls="tab-about" aria-selected="false" data-tab="about" tabindex="-1">About</button>
   </nav>
 
-  <main>
-    <!-- SCREEN -->
-    <section id="tab-screen" class="tab">
-      <div class="grid2">
-        <form id="screen-form" class="card">
-          <h2>1 &middot; Upload</h2>
-          <div class="seg" role="radiogroup" aria-label="Task">
-            <label><input type="radio" name="task" value="tb" checked> Chest X-ray &middot; TB</label>
-            <label><input type="radio" name="task" value="dr"> Fundus &middot; Diabetic retinopathy</label>
+  <main id="main">
+    <!-- ============================================================ SCREEN -->
+    <section id="tab-screen" class="tab" role="tabpanel" aria-labelledby="t-screen">
+      <div class="bench">
+        <div class="bench-left">
+          <div class="segmented" role="radiogroup" aria-label="Image type">
+            <label><input type="radio" name="task" value="tb" checked><svg aria-hidden="true"><use href="#i-lungs"/></svg><span><b>Chest X-ray</b><small>Tuberculosis</small></span></label>
+            <label><input type="radio" name="task" value="dr"><svg aria-hidden="true"><use href="#i-eye"/></svg><span><b>Fundus photo</b><small>Diabetic retinopathy</small></span></label>
           </div>
-          <label class="drop" id="drop">
-            <input type="file" id="file" accept="image/*,.dcm" hidden>
-            <img id="preview" alt="" hidden>
-            <span id="drop-text">Drop an image here or <u>choose a file</u><br><small>PNG, JPEG, TIFF or DICOM</small></span>
-          </label>
-          <label class="check"><input type="checkbox" id="heatmap" checked> Show heatmap</label>
-          <button type="submit" id="screen-btn" class="primary" disabled>Screen image</button>
-          <p class="hint">Images are processed in memory and are not stored. Only a fingerprint (hash) and the result are logged.</p>
-        </form>
 
-        <div class="card" id="result-card">
-          <h2>2 &middot; Result</h2>
-          <div id="result-empty" class="empty">Upload an image to see the quality check, triage and explanation.</div>
-          <div id="result" hidden>
-            <div id="decision" class="decision"></div>
-            <p id="note" class="note"></p>
-            <ul id="warnings" class="warnings"></ul>
-            <div class="steps">
-              <div class="step"><h3>Quality gate</h3><ul id="gate" class="checks"></ul></div>
-              <div class="step"><h3>Triage</h3><dl id="triage" class="kv"></dl></div>
-            </div>
-            <figure id="heat-fig" hidden>
-              <img id="heat" alt="Heatmap of image regions that pushed the score up (red) or down (blue)">
-              <figcaption>Red: regions that pushed the score towards <em>refer</em>. Blue: towards <em>low risk</em>.
-                Explains this model's score; it does not outline disease.</figcaption>
-            </figure>
-            <details class="outcome">
-              <summary>Record confirmatory test result (for monitoring)</summary>
-              <div class="row">
-                <button type="button" data-outcome="1" class="ghost">Confirmed positive</button>
-                <button type="button" data-outcome="0" class="ghost">Confirmed negative</button>
-                <span id="outcome-msg" class="hint"></span>
-              </div>
-            </details>
-            <p class="meta" id="meta"></p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SITES -->
-    <section id="tab-sites" class="tab" hidden>
-      <div class="grid2">
-        <div class="card">
-          <h2>Add a site</h2>
-          <form id="site-form" class="stack">
-            <label>Site ID <input id="site-id" required pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="phc-hosakote"></label>
-            <label>Name <input id="site-name" required placeholder="PHC Hosakote"></label>
-            <button class="primary" type="submit">Create site</button>
-          </form>
-          <h2 class="mt">Onboard a site</h2>
-          <p class="hint">Upload a zip with 50-100 locally labelled images and a <code>labels.csv</code>
-            (<code>filename,label[,patient_id]</code>, label 1 = confirmed positive). ClinicTune measures dataset shift,
-            recalibrates thresholds and the conformal layer, and prints a report card.</p>
-          <form id="onboard-form" class="stack">
-            <label>Site <select id="onboard-site" required></select></label>
-            <label>Task
-              <select id="onboard-task"><option value="tb">Chest X-ray &middot; TB</option><option value="dr">Fundus &middot; DR</option></select>
+          <div class="lightbox" id="lightbox">
+            <label class="drop" id="drop">
+              <input type="file" id="file" accept="image/*,.dcm" hidden>
+              <svg class="drop-icon" aria-hidden="true"><use href="#i-upload"/></svg>
+              <span class="drop-title">Drop an image on the lightbox</span>
+              <span class="drop-sub">or <u>choose a file</u>. PNG, JPEG, TIFF or DICOM, up to 25 MB.</span>
             </label>
-            <label>Onboarding pack (.zip) <input type="file" id="onboard-file" accept=".zip" required></label>
-            <button class="primary" type="submit">Start onboarding</button>
-          </form>
-          <div id="job" class="job" hidden>
-            <div class="bar"><span id="job-bar"></span></div>
-            <p id="job-msg" class="hint"></p>
+            <figure class="film" id="film" hidden>
+              <div class="film-frame" id="film-frame">
+                <img id="film-img" alt="Image being screened">
+                <img id="film-heat" class="film-heat" alt="" hidden>
+                <div class="regions" id="regions" aria-hidden="true"></div>
+                <div class="scanline" aria-hidden="true"></div>
+              </div>
+            </figure>
+          </div>
+
+          <div class="lightbox-bar">
+            <div class="film-meta" id="film-meta">No image loaded</div>
+            <div class="lightbox-actions">
+              <label class="toggle"><input type="checkbox" id="heatmap" checked><span class="toggle-track" aria-hidden="true"></span>Heatmap</label>
+              <button type="button" class="button quiet" id="change-btn" hidden>Choose another</button>
+              <button type="button" class="button primary" id="screen-btn" disabled>Screen image</button>
+            </div>
           </div>
         </div>
-        <div class="card">
-          <h2>Sites</h2>
-          <div id="sites-list" class="empty">No sites yet.</div>
-        </div>
-      </div>
-      <div class="card" id="report-wrap" hidden>
-        <div class="row between"><h2>Site report card</h2><button id="print-report" class="ghost" type="button">Print</button></div>
-        <iframe id="report-frame" title="Site report card"></iframe>
+
+        <article class="slip" id="slip" aria-live="polite" aria-busy="false">
+          <div class="slip-perf" aria-hidden="true"></div>
+          <div class="slip-empty" id="slip-empty">
+            <p class="slip-empty-title">The result appears here as a screening slip.</p>
+            <p>Each slip says what to do next, why the screening aid decided it, and which reference cases look most similar. You can print it and attach it to the patient's OPD card.</p>
+          </div>
+          <div id="slip-body" hidden></div>
+        </article>
       </div>
     </section>
 
-    <!-- MONITOR -->
-    <section id="tab-monitor" class="tab" hidden>
-      <div class="card">
+    <!-- ============================================================ QUEUE -->
+    <section id="tab-queue" class="tab" role="tabpanel" aria-labelledby="t-queue" hidden>
+      <div class="section-head">
+        <div>
+          <h1>Today's queue</h1>
+          <p class="lede">Add a batch of images from the morning's session. The queue sorts itself so patients who need referral rise to the top.</p>
+        </div>
         <div class="row">
-          <label>Site <select id="mon-site"></select></label>
-          <label>Task <select id="mon-task"><option value="tb">TB</option><option value="dr">DR</option></select></label>
-          <label>Days <input id="mon-days" type="number" value="30" min="1" max="365"></label>
-          <button id="mon-btn" class="primary" type="button">Refresh</button>
+          <label class="button primary"><input type="file" id="queue-files" accept="image/*,.dcm" multiple hidden>Add images</label>
+          <button type="button" class="button quiet" id="queue-export" disabled>Export CSV</button>
+          <button type="button" class="button quiet" id="queue-clear" disabled>Clear</button>
         </div>
-        <div id="mon" class="tiles"></div>
-        <p class="hint" id="mon-note"></p>
+      </div>
+      <div class="queue-tally" id="queue-tally" hidden></div>
+      <div class="register-wrap">
+        <table class="register" id="queue-table" hidden>
+          <thead><tr><th scope="col">Image</th><th scope="col">Result</th><th scope="col" class="num">Score</th><th scope="col">Why</th><th scope="col" class="num">Time</th></tr></thead>
+          <tbody id="queue-body"></tbody>
+        </table>
+      </div>
+      <div class="empty-note" id="queue-empty">
+        <p>No images in the queue. Images are screened two at a time with the clinic and image type chosen above, and nothing is stored on the server except a fingerprint of each image.</p>
       </div>
     </section>
 
-    <!-- ABOUT -->
-    <section id="tab-about" class="tab" hidden>
-      <div class="card prose" id="about"></div>
+    <!-- ============================================================ SITES -->
+    <section id="tab-sites" class="tab" role="tabpanel" aria-labelledby="t-sites" hidden>
+      <div class="section-head">
+        <div>
+          <h1>Clinics</h1>
+          <p class="lede">A model trained at other hospitals is not trusted here until it has been checked on your own patients. Onboarding takes 50 to 100 images whose diagnosis was confirmed locally.</p>
+        </div>
+      </div>
+      <div class="split">
+        <div>
+          <h2>Registered clinics</h2>
+          <div id="sites-list" class="sites-list"><p class="muted">No clinics registered yet.</p></div>
+          <details class="add-site">
+            <summary>Register a clinic</summary>
+            <form id="site-form" class="stack">
+              <label class="field">Clinic ID <input id="site-id" required pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="phc-hosakote" autocomplete="off"><small>Lower-case letters, numbers and dashes.</small></label>
+              <label class="field">Name <input id="site-name" required placeholder="PHC Hosakote" autocomplete="off"></label>
+              <button class="button primary" type="submit">Register clinic</button>
+              <p class="form-msg" id="site-msg" role="status"></p>
+            </form>
+          </details>
+        </div>
+        <div class="onboard">
+          <h2>Onboard a clinic</h2>
+          <form id="onboard-form" class="stack">
+            <div class="grid-2">
+              <label class="field">Clinic <select id="onboard-site" required></select></label>
+              <label class="field">Image type
+                <select id="onboard-task"><option value="tb">Chest X-ray (TB)</option><option value="dr">Fundus photo (DR)</option></select>
+              </label>
+            </div>
+            <label class="field">Onboarding pack
+              <input type="file" id="onboard-file" accept=".zip" required>
+              <small>A zip of images plus <code>labels.csv</code> with columns <code>filename,label</code> and optionally <code>patient_id,sex,age</code>. Label 1 means the condition was confirmed.</small>
+            </label>
+            <button class="button primary" type="submit">Start onboarding</button>
+          </form>
+          <ol class="steps" id="onboard-steps" hidden>
+            <li data-step="0">Check image quality</li>
+            <li data-step="1">Read every image</li>
+            <li data-step="2">Measure how this clinic differs</li>
+            <li data-step="3">Fit this clinic's settings</li>
+            <li data-step="4">Write the report card</li>
+          </ol>
+          <p class="form-msg" id="onboard-msg" role="status"></p>
+        </div>
+      </div>
+      <div class="report-wrap" id="report-wrap" hidden>
+        <div class="section-head compact">
+          <h2 id="report-title">Report card</h2>
+          <button id="print-report" class="button quiet" type="button"><svg aria-hidden="true"><use href="#i-print"/></svg>Print report</button>
+        </div>
+        <iframe id="report-frame" title="Clinic report card"></iframe>
+      </div>
+    </section>
+
+    <!-- ============================================================ MONITOR -->
+    <section id="tab-monitor" class="tab" role="tabpanel" aria-labelledby="t-monitor" hidden>
+      <div class="section-head">
+        <div>
+          <h1>Monitoring</h1>
+          <p class="lede">What the screening aid has been saying at this clinic, and whether anything has changed since it was onboarded.</p>
+        </div>
+        <div class="row">
+          <label class="field compact">Clinic <select id="mon-site"></select></label>
+          <label class="field compact">Image type <select id="mon-task"><option value="tb">Chest X-ray</option><option value="dr">Fundus photo</option></select></label>
+          <label class="field compact">Period
+            <select id="mon-days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select>
+          </label>
+        </div>
+      </div>
+      <div id="mon-alerts" class="alerts"></div>
+      <div id="mon-stats" class="stats"></div>
+      <figure class="chart" id="mon-chart-fig" hidden>
+        <figcaption>Results per day</figcaption>
+        <div id="mon-chart"></div>
+      </figure>
+      <p class="muted small" id="mon-note"></p>
+    </section>
+
+    <!-- ============================================================ VALIDATION -->
+    <section id="tab-validation" class="tab" role="tabpanel" aria-labelledby="t-validation" hidden>
+      <div class="section-head">
+        <div>
+          <h1>How it was tested</h1>
+          <p class="lede">Every number here comes from public hospital datasets, using one rule: train on some hospitals, then test on a hospital the model has never seen.</p>
+        </div>
+      </div>
+      <div id="validation"><p class="muted">Loading validation results…</p></div>
+    </section>
+
+    <!-- ============================================================ ABOUT -->
+    <section id="tab-about" class="tab" role="tabpanel" aria-labelledby="t-about" hidden>
+      <div class="prose" id="about"></div>
     </section>
   </main>
 
   <dialog id="key-dialog">
     <form method="dialog" class="stack">
-      <label>API key (stored in this browser only) <input id="key-input" type="password" autocomplete="off"></label>
-      <div class="row"><button value="save" class="primary">Save</button><button value="cancel" class="ghost">Cancel</button></div>
+      <h2>API key</h2>
+      <p class="muted">Needed only if this server was started with an API key. It is kept in this browser.</p>
+      <label class="field">Key <input id="key-input" type="password" autocomplete="off"></label>
+      <div class="row end"><button value="cancel" class="button quiet">Cancel</button><button value="save" class="button primary">Save key</button></div>
     </form>
   </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>
 </html>
