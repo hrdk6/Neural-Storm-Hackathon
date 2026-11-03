@@ -1,0 +1,10 @@
+task,site,condition,roc_auc,n
+dr,aptos2019,original,0.9787714127832013,300
+dr,ddr,original,0.9601416786226686,300
+dr,idrid,original,0.9398508738601824,300
+dr,aptos2019,background_only,0.6267268373549457,300
+dr,ddr,background_only,0.5469422525107603,300
+dr,idrid,background_only,0.4908814589665654,300
+dr,aptos2019,center_crop_80,0.9684103886535272,300
+dr,ddr,center_crop_80,0.958079268292683,300
+dr,idrid,center_crop_80,0.9353390957446809,300
