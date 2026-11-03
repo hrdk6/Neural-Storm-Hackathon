@@ -1,0 +1,29 @@
+# Never commit data, model weights, embeddings or the service database.
+/data/
+/models/
+/cache/
+/var/
+*.onnx
+*.onnx.data
+*.npz
+*.npy
+*.sqlite3*
+*.dcm
+
+# Synthetic experiment outputs are regenerated; real-data result tables in reports/ are committed on purpose.
+reports/synthetic/*_raw.csv
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+.env
+
+# Local editor / agent tooling
+/.claude/
