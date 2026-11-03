@@ -116,3 +116,29 @@ def test_binary_report_fields():
 )
 def test_decision_rule(p, in_set, expected):
     assert decide(p, np.array(in_set), threshold=0.5)[0] == expected
+
+
+def test_residual_head_fixes_ranking_under_shift():
+    """A site where one feature flips meaning: recalibration (monotone) can't help, the residual head can."""
+    from sklearn.metrics import roc_auc_score
+
+    from clinictune.model.adapt import fit_residual, select_and_fit
+
+    rng = np.random.default_rng(7)
+    d = 20
+    Xs = rng.normal(size=(600, d))
+    ys = (Xs[:, 0] + Xs[:, 1] > 0).astype(int)
+    head, _ = fit_head(Xs, ys, np.arange(600).astype(str))
+    Xt = rng.normal(size=(400, d))
+    yt = (Xt[:, 0] - Xt[:, 1] > 0).astype(int)  # feature 1 has the opposite sign at the new site
+    tr, te = np.arange(200), np.arange(200, 400)
+    base_auc = roc_auc_score(yt[te], head.logit(Xt[te]))
+    fit = select_and_fit(head, Xt[tr], yt[tr], np.arange(200).astype(str))
+    assert fit is not None
+    residual, oof, aucs = fit
+    adapted = head.logit(Xt[te]) + residual.logit(head, Xt[te])
+    assert roc_auc_score(yt[te], adapted) > base_auc + 0.1
+    assert len(oof) == 200 and set(aucs)
+    # Heavy regularisation keeps the residual close to zero (stays near the source model).
+    tiny = fit_residual(head, Xt[tr], yt[tr], lam=1e6)
+    assert np.abs(tiny.coef).max() < 1e-2

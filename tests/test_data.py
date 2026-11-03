@@ -89,3 +89,36 @@ def test_read_pack_validation():
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("labels.csv", "filename,label\n" + "x" * 2000)
         read_pack(buf.getvalue(), 100, 1000)
+
+
+def test_clinical_reading_parser():
+    from clinictune.data.loaders import parse_clinical_reading
+
+    assert parse_clinical_reading("Patient's Sex: F \nPatient's Age: 027Y\nnormal") == ("F", "27")
+    assert parse_clinical_reading("male 35yrs\nnormal") == ("M", "35")
+    assert parse_clinical_reading("female 8 month\nPTB") == ("F", "0")
+    assert parse_clinical_reading("nothing useful") == ("", "")
+
+
+def test_graded_loader_and_gradability(tmp_path):
+    from clinictune.data.loaders import load_gradability, load_graded
+
+    (tmp_path / "images").mkdir()
+    for n in ("a.jpg", "b.jpg", "c.jpg"):
+        Image.new("RGB", (32, 32)).save(tmp_path / "images" / n)
+    (tmp_path / "labels.csv").write_text(
+        "filename,grade,gradable,official_split\na.jpg,0,1,x\nb.jpg,3,1,x\nc.jpg,-1,0,x\n"
+    )
+    recs = load_graded(tmp_path, dataset="ddr")
+    assert [(r.label, r.task) for r in recs] == [(0, "dr"), (1, "dr")]
+    assert [y for _, y in load_gradability(tmp_path)] == [0, 0, 1]
+
+
+def test_montgomery_mask_lookup(tmp_path):
+    from clinictune.data.loaders import montgomery_lung_mask
+
+    for sub in ("CXR_png", "ManualMask/leftMask", "ManualMask/rightMask"):
+        (tmp_path / sub).mkdir(parents=True)
+        Image.new("L", (8, 8)).save(tmp_path / sub / "MCUCXR_0001_0.png")
+    assert montgomery_lung_mask(tmp_path / "CXR_png" / "MCUCXR_0001_0.png") is not None
+    assert montgomery_lung_mask(tmp_path / "CXR_png" / "MCUCXR_0002_0.png") is None
