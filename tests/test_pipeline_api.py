@@ -166,3 +166,24 @@ def test_upload_limit(demo, tmp_path):
     with TestClient(create_app(s)) as c:
         r = c.post("/v1/screen", files={"file": ("x.png", b"0" * 5000, "image/png")}, data={"task": "tb"})
         assert r.status_code == 413
+
+
+def test_screen_and_onboard_with_a_model_view(demo):
+    """Exercise the fundus model view end to end: embedding, heatmap mapping, regions, onboarding."""
+    from clinictune.triage import Screener
+
+    b = Bundle.load(demo["bundle"])
+    b.tasks["dr"].preprocess = "fundus_field:512"
+    img = sorted(Path(demo["root"], "data", "onboarding", "dr_clinic_new_unseen").glob("*.png"))[0]
+    wide = np.zeros((600, 900, 3), np.uint8)
+    wide[44:556, 194:706] = np.asarray(Image.open(img).convert("RGB"))  # letterboxed, like a different camera
+    buf = io.BytesIO()
+    Image.fromarray(wide).save(buf, format="PNG")
+    r = Screener(b).screen(buf.getvalue(), "dr")
+    if r["probability"] is not None:
+        assert r["heatmap_png"].startswith("data:image/png")
+        for g in r["regions"]:  # boxes land inside the letterboxed retina, not in the black margins
+            assert 194 / 900 - 0.05 <= g["x"] <= 706 / 900 + 0.05
+    items = read_pack(Path(demo["dr_clinic_new"]).read_bytes(), 1000, 1 << 32)
+    calib, report = run_onboarding(b, "clinic", "dr", items)
+    assert report["counts"]["n"] > 0 and calib.task == "dr"
