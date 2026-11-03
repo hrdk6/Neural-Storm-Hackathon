@@ -872,6 +872,10 @@ function deployedRun(ev, task) {
   const deployed = state.info?.tasks?.[task]?.backbone;
   return runs.find((r) => r.backbone === deployed) || runs[runs.length - 1];
 }
+function lastRow(run, site, strategy) {
+  const rs = (run?.summary || []).filter((r) => r.held_out_site === site && r.strategy === strategy);
+  return rs.length ? rs.reduce((a, b) => (b.k_labels > a.k_labels ? b : a)) : undefined;
+}
 function rowsFor(run, strategy, k) {
   return (run?.summary || []).filter((r) => r.strategy === strategy && (k === undefined || r.k_labels === k));
 }
@@ -904,13 +908,11 @@ function computeFindings(ev, tasks) {
     images += Object.values(ds).reduce((a, d) => a + (d.images || 0), 0);
     const run = deployedRun(ev, t);
     const before = rowsFor(run, "source_calibration", 0);
-    const kMax = Math.max(0, ...rowsFor(run, "site_recalibration").map((r) => r.k_labels));
-    const after = rowsFor(run, "site_recalibration", kMax);
     for (const b of before) {
       tested++;
       if (Math.min(b.coverage_neg ?? 1, b.coverage_pos ?? 1) < 0.85) {
         broke++;
-        const a = after.find((x) => x.held_out_site === b.held_out_site);
+        const a = lastRow(run, b.held_out_site, "site_recalibration"); // each site's own largest label budget
         if (a && Math.min(a.coverage_neg ?? 0, a.coverage_pos ?? 0) >= 0.85) fixed++;
       }
     }
@@ -1008,9 +1010,9 @@ function coverageSection(run, task) {
   const rows = [];
   for (const s of sites) {
     const b = run.summary.find((r) => r.held_out_site === s && r.strategy === "source_calibration");
-    const a = run.summary.find((r) => r.held_out_site === s && r.strategy === "site_recalibration" && r.k_labels === kMax);
+    const a = lastRow(run, s, "site_recalibration"); // small hospitals cap out below kMax
     for (const [cls, key] of [[TASKS[task].positive, "coverage_pos"], [TASKS[task].negative, "coverage_neg"]]) {
-      rows.push({ site: s, cls, before: b?.[key], after: a?.[key] });
+      rows.push({ site: s, cls, before: b?.[key], after: a?.[key], k: a?.k_labels });
     }
   }
   const W = 640, rowH = 26, L = 230, R = 16, T = 22, H = T + rows.length * rowH + 24;
@@ -1034,16 +1036,16 @@ function coverageSection(run, task) {
     g.append(sv("rect", { x: L, y: cy - rowH / 2, width: W - L - R, height: rowH, fill: "transparent" }));
     bindTip(g, `${siteLabel(r.site)}, ${r.cls}`, [
       { label: "Training settings", value: pct(r.before), color: cssVar("--ink-3") },
-      { label: `Recalibrated, ${kMax} labels`, value: pct(r.after), color: cssVar("--series-1") },
+      { label: `Recalibrated, ${r.k} labels`, value: pct(r.after), color: cssVar("--series-1") },
     ]);
     svg.append(g);
   });
   return el("section", { class: "v-section" },
     el("h2", { text: "Does the 90% confidence guarantee hold?" }),
-    el("p", { text: `For each hospital and each class, the share of held-out images whose true answer was inside the aid's confidence set. Hollow dots use the training hospitals' settings unchanged; filled dots are after recalibrating with ${kMax} local labels. Below the line, the guarantee failed. This is reported, not hidden.` }),
-    legend([{ label: "Training hospitals' settings", color: cssVar("--ink-3") }, { label: `Recalibrated with ${kMax} local labels`, color: cssVar("--series-1") }]),
+    el("p", { text: `For each hospital and each class, the share of held-out images whose true answer was inside the aid's confidence set. Hollow dots use the training hospitals' settings unchanged; filled dots are after recalibrating with up to ${kMax} local labels (fewer where a hospital is small). Below the line, the guarantee failed. This is reported, not hidden.` }),
+    legend([{ label: "Training hospitals' settings", color: cssVar("--ink-3") }, { label: "Recalibrated with local labels", color: cssVar("--series-1") }]),
     el("figure", { class: "chart", style: "margin-top:10px" }, svg),
-    tableView(["Hospital", "Class", "Before", "After"], rows.map((r) => [siteLabel(r.site), r.cls, pct(r.before), pct(r.after)])),
+    tableView(["Hospital", "Class", "Before", "After", "Local labels"], rows.map((r) => [siteLabel(r.site), r.cls, pct(r.before), pct(r.after), r.k ?? "–"])),
   );
 }
 
