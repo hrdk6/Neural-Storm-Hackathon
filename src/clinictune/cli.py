@@ -37,7 +37,10 @@ def cmd_manifest(a: argparse.Namespace) -> None:
         name, _, root = spec.partition("=")
         if name not in LOADERS:
             sys.exit(f"unknown dataset {name!r}; known: {sorted(LOADERS)}")
-        records += LOADERS[name](root)
+        if name == "tbx11k" and a.tbx11k_negatives:
+            records += LOADERS[name](root, max_per_negative_class=a.tbx11k_negatives, seed=a.seed)
+        else:
+            records += LOADERS[name](root)
     n = write_manifest(records, a.out)
     print(json.dumps(summarize(records), indent=2))
     print(f"wrote {n} records to {a.out}")
@@ -313,6 +316,13 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("dataset", nargs="+", help="name=path, e.g. shenzhen=/data/ChinaSet_AllFiles/CXR_png")
     s.add_argument("--out", default="data/manifest.csv")
     s.add_argument("--append", action="store_true")
+    s.add_argument(
+        "--tbx11k-negatives",
+        type=int,
+        default=None,
+        help="keep every TBX11K TB image but sample this many healthy and this many sick-non-TB images",
+    )
+    s.add_argument("--seed", type=int, default=0)
     s.set_defaults(fn=cmd_manifest)
 
     s = sub.add_parser("licences", help="show dataset/backbone licences; --strict fails on unverified")
