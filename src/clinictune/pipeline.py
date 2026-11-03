@@ -145,7 +145,7 @@ def train_bundle(
         if not recs:
             raise ValueError(f"no training records for task {task}")
         log.info("task %s (%s): %s", task, name, summarize(recs))
-        X = extract(recs, backbone, Path(cache_dir) / f"{_safe(name)}_{task}.npz")
+        X = extract(recs, backbone, Path(cache_dir) / f"{_safe(name)}_{task}_all.npz")  # shared with `loso`
         tm = train_task(X, recs, task, alpha=alpha, seed=seed, backbone=name)
         if library_size:
             tm.library = build_library(recs, X, bundle_dir, task, size=library_size, seed=seed)

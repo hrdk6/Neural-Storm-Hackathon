@@ -57,8 +57,16 @@ def extract(
             cached[keys[i]] = e
         log.info("extracted %d/%d", min(start + 64, len(todo)), len(todo))
     out = np.stack([cached[k] for k in keys]).astype(np.float32)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = cache_path.with_suffix(".tmp.npz")
-    np.savez_compressed(tmp, keys=np.array(keys), emb=out, backbone_sha256=np.array(backbone.spec.sha256))
-    tmp.replace(cache_path)
+    if todo or not cache_path.exists():
+        # Persist the union of old and new rows, so extracting a subset never drops other cached images.
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache_path.with_suffix(".tmp.npz")
+        all_keys = list(cached)
+        np.savez_compressed(
+            tmp,
+            keys=np.array(all_keys),
+            emb=np.stack([cached[k] for k in all_keys]).astype(np.float32),
+            backbone_sha256=np.array(backbone.spec.sha256),
+        )
+        tmp.replace(cache_path)
     return out
