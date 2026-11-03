@@ -728,6 +728,17 @@ function niceMax(v) {
 /* ================================================================ monitoring */
 let monSeq = 0;
 ["#mon-site", "#mon-task", "#mon-days"].forEach((s) => $(s).addEventListener("change", loadMonitoring));
+$("#mon-export").addEventListener("click", async () => {
+  const site = $("#mon-site").value;
+  if (!site) return;
+  try {
+    const csv = await api(`/v1/sites/${encodeURIComponent(site)}/screenings.csv?days=${$("#mon-days").value}`);
+    const a = el("a", { href: URL.createObjectURL(new Blob([csv], { type: "text/csv" })), download: `${site}-screenings.csv` });
+    document.body.append(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (err) { toast(err.message); }
+});
 async function loadMonitoring() {
   const site = $("#mon-site").value;
   if (!site) {
