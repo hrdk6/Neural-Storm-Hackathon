@@ -31,6 +31,7 @@ def train_task(
     alpha: float = 0.1,
     target_sensitivity: float | None = None,
     seed: int = 0,
+    backbone: str = "",
 ) -> TaskModel:
     y, patients, sites = records_arrays(records)
     tr, pl, cf, te = patient_split(y, patients, [0.65, 0.10, 0.10, 0.15], seed=seed)
@@ -60,6 +61,7 @@ def train_task(
     official = sorted({f"{r.dataset}:{r.official_split}" for r in records if r.official_split})
     return TaskModel(
         task=task,
+        backbone=backbone,
         head=head,
         platt=platt,
         threshold=threshold,
