@@ -122,3 +122,34 @@ def test_montgomery_mask_lookup(tmp_path):
         Image.new("L", (8, 8)).save(tmp_path / sub / "MCUCXR_0001_0.png")
     assert montgomery_lung_mask(tmp_path / "CXR_png" / "MCUCXR_0001_0.png") is not None
     assert montgomery_lung_mask(tmp_path / "CXR_png" / "MCUCXR_0002_0.png") is None
+
+
+def test_standardize_fundus_removes_framing_differences():
+    """Two cameras framing the same retina differently must give the same model view."""
+    rng = np.random.default_rng(1)
+    retina = synthetic.fundus(1, synthetic.TRAIN_SITES[3], rng)  # 512 x 512, field in the centre
+    wide = np.zeros((600, 1000, 3), np.uint8)
+    wide[40:552, 300:812] = retina  # same retina, letterboxed by a different camera
+    a, region_a = imaging.standardize_fundus(retina)
+    b, region_b = imaging.standardize_fundus(wide)
+    assert a.shape == b.shape and a.shape[0] == a.shape[1]
+    small = lambda x: np.asarray(Image.fromarray(x).resize((64, 64))).astype(float)  # noqa: E731
+    assert np.abs(small(a) - small(b)).mean() < 6  # nearly identical after standardisation
+    assert region_b[0] > region_a[0] and abs(region_b[2] - region_a[2]) <= 3  # offset differs, size does not
+    corner = a[: a.shape[0] // 10, : a.shape[1] // 10]
+    assert corner.max() == 0  # outside the inscribed circle is blanked
+
+
+def test_heatmap_maps_back_to_original():
+    from clinictune.explain import overlay_png, regions_to_original, top_regions
+
+    rgb = np.zeros((300, 450, 3), np.uint8)
+    rgb[20:280, 95:355] = 120
+    view, region = imaging.model_view("fundus_field:512", rgb)
+    grid = np.zeros((16, 16))
+    grid[8, 8] = 1.0
+    png = overlay_png(rgb, grid, region=region)
+    assert Image.open(io.BytesIO(png)).size[0] == 512  # composite keeps the original's aspect
+    (box,) = regions_to_original(top_regions(grid, k=1), region, rgb.shape)
+    assert abs(box["x"] - 0.5) < 0.02 and abs(box["y"] - 0.5) < 0.04
+    assert imaging.model_view("", rgb)[1] is None
