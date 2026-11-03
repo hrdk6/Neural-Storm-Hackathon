@@ -148,7 +148,7 @@ def test_api_screen_onboard_report_monitor(client, demo):
     rep = client.get("/v1/sites/phc-1/report", params={"task": "dr"}).json()
     assert rep["version"] == 2 and "shift" in rep
     html = client.get("/v1/sites/phc-1/report.html", params={"task": "dr", "version": 1}).text
-    assert "Site report card" in html and "Screening aid" in html
+    assert "Clinic report card" in html and "Screening aid" in html
     assert client.post("/v1/sites/phc-1/calibrations/dr/1/activate").status_code == 200
     assert client.get("/v1/sites/phc-1/report", params={"task": "dr"}).json()["version"] == 1
 
