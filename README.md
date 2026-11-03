@@ -1,100 +1,210 @@
-﻿# ClinicTune: a site-adaptive screening aid
+# ClinicTune
 
-**Neural Storm 2026 · HI-01 · Medical Image Diagnostic Assistant for under-resourced clinics**
+**A site-adaptive screening aid for tuberculosis on chest X-rays and diabetic retinopathy on fundus photos,
+built for under-resourced clinics.** Neural Storm 2026, HI-01.
 
-ClinicTune screens **chest X-rays for tuberculosis** (core task) and **colour fundus photos for referable
-diabetic retinopathy** (second task). For every image it returns one of three outputs:
+ClinicTune reads an image and answers in a way a primary health centre can act on: **Refer**, **Low risk**,
+or **Uncertain** (escalate or retake). Each answer comes with the reasons, an exact heatmap, the most similar
+confirmed cases, and a plain-language note in English, Hindi or Kannada, printed as a screening slip.
 
-| Output | Meaning | What the clinic does |
-|---|---|---|
-| **Refer** | Signs that need confirmation | Send for confirmatory testing (e.g. sputum NAAT, ophthalmologist) |
-| **Low risk** | No signs found *and* the model is confident at this site | Routine care. Symptoms still need to be assessed |
-| **Uncertain** | Bad image, unfamiliar image, or the model cannot decide | Retake, or escalate to a senior clinician |
+> ClinicTune is a **screening aid and decision-support tool. It does not diagnose disease** and is not a
+> medical device. Every output must be reviewed by a qualified clinician and confirmed with the appropriate
+> test (sputum NAAT for TB, an ophthalmologist for diabetic retinopathy).
 
-Each output comes with a quality-gate report, a heatmap and a plain-language note in English, Hindi or Kannada.
+What makes it different is that **it does not trust itself at a new clinic until it has been checked
+there.** A clinic uploads 50 to 100 images whose diagnosis was confirmed locally. ClinicTune then:
+1. measures how different the clinic is from the training hospitals;
+2. shows how badly the unadapted model would have done there;
+3. fits the clinic's own settings, and a small adaptation layer when that clearly helps;
+4. prints a report card with an honest verdict.
 
-> **Screening aid / decision support only.** ClinicTune does not diagnose disease, is not a medical
-> device, and has not been clinically validated. Every output must be reviewed by a qualified clinician.
+![A chest X-ray on the lightbox and its screening slip stamped Refer](docs/screenshots/screen-tb.jpg)
+
+*An unseen chest X-ray from a clinic onboarded with 99 local images. The aid stamps **Refer**. The exact
+heatmap concentrates on the upper lung zones, not on the "LT ERECT" or "R" markers. Below the slip are the
+most similar confirmed cases. Image: Montgomery County set, U.S. National Library of Medicine.*
+
+| | |
+|---|---|
+| ![Fundus photo screened with a Kannada note](docs/screenshots/screen-dr-kannada.jpg) | ![Today's queue sorted by priority](docs/screenshots/queue.jpg) |
+| *A fundus photo from a clinic in Nanded, India, with the note in Kannada. All seven quality checks passed, including the learned gradability model. Image: IDRiD, Porwal et al., CC BY 4.0.* | *A morning's batch sorts itself so referrals rise to the top.* |
+
+![Clinic report card](docs/screenshots/report-card.jpg)
+
+*The report card after onboarding Montgomery County. Specificity was 15% with the training hospitals'
+settings; the automatically chosen local adaptation layer brings it to 77% with sensitivity at 89.7%,
+cross-fitted.
+The verdict still says "use with caution", and why.*
 
 ---
 
-## Why "site-adaptive"
+## Results on real hospitals
 
-Published evidence shows that models degrade when moved to a new hospital. TBX11K → Mendeley TB, for
-example, reaches about 75% with a frozen backbone and 10 labels per class, and about 91% with 100. Models
-can also learn shortcuts such as hospital markers. Conformal guarantees weaken under shift and per
-class/subgroup (Mehrtens et al. 2025; Boman et al. 2026). ClinicTune is built around that evidence:
+All numbers come from **public datasets from 6 hospitals or hospital networks in China, India and the USA**:
+- **TB:** 3,000 chest X-rays from three sources.
+- **DR:** 6,278 fundus photos from three sources, plus 2,500 expert image-quality labels.
 
-1. **Frozen foundation embeddings + small linear heads.** The backbone is MedSigLIP-448, with DINOv2-small as a
-   lightweight CPU fallback. Both run through ONNX Runtime. No fine-tuning, so a clinic laptop can run it.
-2. **Site onboarding.** A new clinic uploads 50–100 locally labelled images. ClinicTune then:
-   - measures **dataset shift**: a domain-classifier AUC, an MMD permutation test, and a label-shift
-     (prevalence) estimate;
-   - reports **before** metrics: the training-site calibration applied to local data. This is usually where
-     conformal coverage fails, and the report says so;
-   - **recalibrates** with MAP Platt scaling, a sensitivity-targeted referral threshold, a **class-conditional
-     (Mondrian) conformal layer** and an OOD threshold;
-   - reports **after** metrics, **cross-fitted** so that no image is scored by a calibration fitted on it;
-   - prints a **site report card** with a verdict (*ready / use with caution / not ready*) and its reasons.
-3. **A quality gate first.** It checks resolution, exposure, sharpness and modality. For CXR it also checks
-   greyscale, aspect ratio and that both lung fields are visible. For fundus it checks the field of view,
-   colour and illumination. An **embedding-space OOD check** is the second line of defence.
-4. **Honest reporting.** Every result reports sensitivity, specificity, ROC-AUC, PR-AUC and ECE per site,
-   with confidence intervals. Coverage failures are reported, not hidden.
+The protocol is **leave one hospital out**: train on the other hospitals, then test on the held-out one. Each
+held-out hospital is split by patient into a pool the "clinic" labels from and a test half that is never
+used for fitting. Results are the mean of 10 repeats. The full tables, with standard deviations, are in
+[`reports/real/`](reports/real). Reproduce everything with [`scripts/reproduce.sh`](scripts/reproduce.sh).
 
-### Decision rule (sensitivity-first)
+### Tuberculosis: RAD-DINO chest X-ray encoder, CPU only
+
+| Held-out hospital | ROC-AUC, unseen | 90% guarantee before (neg / pos) | After onboarding (neg / pos) | ROC-AUC with local adaptation | Sensitivity / specificity after |
+|---|---|---|---|---|---|
+| Shenzhen, China | 0.82 | **31% / 72%** fails | 92% / 90% | **0.94** (100 labels) | 0.90 / 0.81 |
+| TBX11K hospitals, China | 0.82 | **48% / 83%** fails | 94% / 96% | **0.97** (100 labels) | **0.95 / 0.82** |
+| Montgomery County, USA | 0.73 | **4% / 97%** fails | 92% / 91% | **0.89** (50 labels) | 0.88 / 0.59 |
+
+The **WHO target product profile for a TB triage test** asks for sensitivity of at least 90% and
+specificity of at least 70%. After onboarding, the aid meets it at TBX11K with 100 labels (94.5% / 82.4%)
+and at Shenzhen with 50 labels (91.8% / 73.8%). At Shenzhen with 100 labels it lands just under on
+sensitivity (89.8% / 80.7%), and Montgomery, with only 138 images, does not reach it (87.9% / 59.5%). These
+are means of 10 repeats; the report card shows each clinic's 95% intervals.
+
+### Diabetic retinopathy: DINOv2-base, CPU only
+
+| Held-out hospital | ROC-AUC, unseen | 90% guarantee before (neg / pos) | After onboarding (neg / pos) | ROC-AUC with local adaptation | Sensitivity / specificity after |
+|---|---|---|---|---|---|
+| Aravind Eye Hospital, India (APTOS) | 0.94 | **49%** / 99% fails | 90% / 90% | **0.97** | 0.83 / 0.93 |
+| DDR, 147 hospitals, China | 0.88 | 94% / **42%** fails | 91% / 90% | **0.90** | 0.84 / 0.78 |
+| IDRiD, Nanded, India | 0.94 | **61%** / 96% fails | 92% / 92% | **0.94** | 0.86 / 0.85 |
+
+### What the experiments show, including what went wrong
+
+- **A model that ranks well can still be dangerous at a new hospital.** At DDR the unadapted DR model has
+  ROC-AUC 0.88, but its sensitivity is **0.38**: it would miss most patients who need an eye specialist.
+  The training hospitals' 90% confidence guarantee failed at **all six** held-out hospitals, three for TB
+  and three for DR. Onboarding with 50 to 100 local labels brought every one back to 90% to 96% coverage.
+- **Recalibration fixes calibration, not ranking.** Platt scaling is monotone, so it can't change ROC-AUC.
+  ClinicTune's **local adaptation layer** can: TB ROC-AUC went 0.82 → 0.94 at Shenzhen and 0.82 → 0.97 at
+  TBX11K. Onboarding deploys it only when it beats recalibration by a clear, cross-fitted margin.
+- **Starting from the training hospitals beats starting from scratch when labels are scarce.** With 50 local
+  labels, the adaptation layer reached mean ROC-AUC 0.924 (TB) and 0.928 (DR); a model trained only on those
+  labels reached 0.909 and 0.905. At 100 labels the gap narrows (TB 0.955 vs 0.958, DR 0.936 vs 0.927).
+- **Calibration error drops sharply after onboarding.** Expected calibration error fell from 0.54 to 0.11
+  at Montgomery and from 0.26 to 0.04 at DDR.
+- **Negative result: the guarantee does not hold equally for women.** At Shenzhen, after recalibration with
+  100 labels, coverage for TB-positive women was **82%** (sensitivity 0.80), against 94% (sensitivity 0.93)
+  for men. This is the failure Boman et al. (2026) warn about: class-conditional calibration is not
+  subgroup-conditional. The Validation page shows it in red, and per-subgroup calibration is on the roadmap.
+- **A domain model matters for chest X-rays.** On unseen TB hospitals, mean ROC-AUC was 0.59 for
+  DINOv2-small, 0.68 for DINOv2-base and **0.79 for RAD-DINO**. For fundus photos the general-purpose
+  DINOv2-base was enough: mean 0.92.
+- **It reads the lungs, not the markings on the film.** At Montgomery, which the model never trained on,
+  ROC-AUC falls from 0.71 to **0.50 (chance) when both lung fields are blanked** with the hospital's manual
+  lung masks, and to 0.52 when only the border is left. Border-only scores at the training hospitals are
+  0.39 and 0.63. Trimming the border *raises* Montgomery's ROC-AUC to 0.80, so its markers distract rather
+  than help.
+- **We found a shortcut in the fundus data, and fixed it.** With the whole retina blanked out, the first DR
+  model still separated referable from non-referable photos at APTOS (ROC-AUC 0.77) and IDRiD (0.67). The
+  cause: in APTOS, the size, position and shape of the retinal field (which reveal the camera) predict
+  referable DR **on their own** with ROC-AUC 0.85, because different cameras saw patients of different
+  severity. ClinicTune now standardises every fundus photo before the model sees it: crop to the retinal
+  field, centre it in a square, resize, and mask outside the circle. The same step runs in training,
+  onboarding and serving, and the heatmap maps back onto the original photo. After the fix, the
+  retina-blanked score is **0.63 at APTOS, 0.55 at DDR and 0.49 at IDRiD**, all under our 0.65 flag; APTOS
+  keeps a little, plausibly from fields the camera cut off at the top or bottom. Unseen-hospital ROC-AUC fell
+  only at APTOS (0.954 → 0.938), where the shortcut lived, and rose at DDR (0.870 → 0.875) and IDRiD
+  (0.928 → 0.938). We also corrected the test itself along the way: it first filled the blanked retina with
+  the retina's own median colour, which leaks overall colour; it now uses a constant fill.
+
+### Choosing a model that runs on a clinic laptop
+
+Every candidate went through the same leave-one-hospital-out test and was timed on a laptop CPU
+(Intel Core Ultra 5 225H, no GPU, ONNX Runtime):
+
+| Image model | Input | CPU time per image (median of 20) | Unseen-hospital ROC-AUC, mean | Used for |
+|---|---|---|---|---|
+| RAD-DINO (chest X-ray foundation model) | 518 px | 1,170 ms | not run (392 px is 2.3x faster) | |
+| **RAD-DINO** | **392 px** | **513 ms** | **0.79** (TB) | **TB** |
+| DINOv2-base | 224 px | 93 ms | 0.68 (TB), **0.92 (DR)** | **DR** |
+| DINOv2-small | 224 px | 34 ms | 0.59 (TB), 0.91 (DR) | |
+
+A full screening, from decoding a 20-megapixel X-ray through the quality gate and heatmap, takes about
+2 seconds on this laptop. The serving image needs no GPU and no PyTorch.
+
+---
+
+## What a clinic gets
+
+| | |
+|---|---|
+| **Screen** | Drop, choose or paste an image. Rule-based quality checks run first (blur, exposure, wrong modality, both lung fields visible); for fundus photos a **learned gradability model** trained on DDR's expert quality labels runs too: on held-out DDR images it catches 94% of ungradable photos while keeping 95% of gradable ones (ROC-AUC 0.98). Then the image is checked for familiarity, scored with the clinic's calibration, given a 90% class-conditional confidence check, and stamped onto a printable slip with the next step, an exact heatmap, the six most similar confirmed reference cases, and the note in the chosen language. |
+| **Queue** | Screen a whole morning's batch. The queue sorts itself so referrals rise to the top, and exports to CSV. |
+| **Clinics** | Register a clinic and onboard it with a zip of locally confirmed images. Watch the five onboarding steps run, then read the report card: shift test, before and after with 95% intervals, the two adaptation strategies compared, a verdict and warnings. Every onboarding is a new version, and you can roll back. |
+| **Monitoring** | Results per day, referral, uncertain and quality-failure rates, and observed sensitivity and specificity once confirmatory results are entered. **Alerts** fire on unfamiliar images (equipment change), quality failures, a significant shift in referral rate (two-proportion test), and any confirmed-positive patient who was called low risk. The screening log downloads as CSV. |
+| **Validation** | The evidence above, rendered from the model bundle: per-hospital charts, coverage before and after, every number, backbone comparison, shortcut tests and subgroups. |
+
+### How the decision is made
 
 ```
-quality gate failed                         -> Uncertain (retake)
-embedding out of distribution               -> Uncertain (escalate)
-conformal set = {refer}                     -> Refer
-set = {refer, low} and p >= site threshold  -> Refer
-set = {low}        and p <  site threshold  -> Low risk
-anything else (ambiguous / empty / conflict)-> Uncertain (escalate)
+quality gate failed (rules or learned gradability)  -> Uncertain: retake
+image unlike anything this clinic was calibrated on -> Uncertain: escalate
+confidence set = {refer}                            -> Refer
+confidence set = {refer, low risk}, score >= line   -> Refer   (sensitivity first)
+confidence set = {low risk}, score < line           -> Low risk
+anything else                                       -> Uncertain: escalate
 ```
 
-"Low risk" requires the conformal layer and the threshold to agree. Missing disease is the costlier error.
+"Low risk" needs the score and the confidence check to agree, because missing disease is the costlier error.
 
-### Heatmaps that are exact, not post-hoc
+### Heatmaps that are exact
 
-The image embedding is the **mean of the backbone's patch tokens**, and the head is linear. The logit
-therefore decomposes **exactly** into per-patch contributions:
-`logit = mean_t(w · (token_t − μ)/σ) + b`. One forward pass gives a faithful map of *what moved this
-model's score*. The UI states that the map explains the score and does not outline disease.
+The image embedding is the mean of the backbone's patch tokens, and every layer on top of it (the training
+head and the clinic's adaptation layer) is linear. The score therefore splits **exactly** into per-patch
+contributions, computed in one forward pass. The heatmap explains this model's score; the UI states that it
+does not outline disease.
 
 ---
 
 ## Architecture
 
 ```
-            ┌────────── one-off, offline ──────────┐        ┌──────────── serving (CPU) ─────────────┐
- datasets → loaders → patient-level splits          │        │ upload → quality gate → ONNX backbone   │
-            │ torch → export backbone → ONNX ───────┼──┬────►│ → OOD check → linear head → site Platt  │
-            │ ONNX backbone → embeddings (cached)   │  │     │ → class-conditional conformal → decision│
-            │ → heads, Platt, threshold, conformal, │  │     │ → exact heatmap → note (en/hi/kn)       │
-            │   OOD → model bundle (sha256-pinned)  │──┘     │ SQLite: sites, calibration versions,    │
-            └───────────────────────────────────────┘        │ onboarding jobs, audit log, monitoring  │
-                                                             └─────────────────────────────────────────┘
+offline, once                                         serving, CPU only
+──────────────────────────────────────────            ─────────────────────────────────────────────────
+clinictune fetch      public data, resumable         upload ─► quality gate (rules + learned gradability)
+clinictune export     RAD-DINO / DINOv2 ─► ONNX            ─► task backbone (ONNX Runtime, sha256-pinned)
+clinictune loso       leave-one-hospital-out               ─► familiarity check (embedding OOD)
+clinictune train      heads, calibration, conformal,       ─► head + clinic adaptation layer + Platt
+                      OOD, gradability, case library       ─► class-conditional conformal ─► decision
+clinictune shortcut   border / lungs / retina blanked      ─► exact heatmap, similar cases, note (en/hi/kn)
+clinictune evidence   validation tables into bundle   SQLite: clinics, settings versions, jobs, audit log
 ```
-
-Embeddings for training are extracted **with the same ONNX model and preprocessing code used in
-production**, so there is no train/serve skew.
 
 | Path | What |
 |---|---|
-| `src/clinictune/data/` | Loaders (TBX11K, Shenzhen, Montgomery, Mendeley TB, APTOS, IDRiD, Messidor-2, generic folder/CSV), manifest, patient-level splits with leakage checks, **licence registry** (`datasets.yaml`) |
-| `src/clinictune/embed/` | ONNX backbone contract, MedSigLIP/DINOv2 export, embedding cache, demo backbone |
-| `src/clinictune/model/` | Linear heads, calibration, conformal, shift tests, OOD, metrics, bundle format, training |
-| `src/clinictune/site/` | Onboarding (shift → before → cross-fitted after → deploy), zip ingestion, report card |
-| `src/clinictune/quality.py` | Quality / gradability gate |
-| `src/clinictune/triage.py` | Per-image pipeline and decision rule |
-| `src/clinictune/experiments.py` | Leave-one-site-out experiments, shortcut tests |
-| `src/clinictune/api/` | FastAPI service, SQLite store |
-| `web/` | No-build web UI (screen · sites & onboarding · monitoring · about) |
+| `src/clinictune/data/` | Reproducible fetcher, loaders (with sex and age from clinical readings, and lung masks), patient-level splits with leakage checks, the **licence registry** |
+| `src/clinictune/embed/` | ONNX backbone contract, exporter for RAD-DINO, DINOv2 and MedSigLIP, embedding cache |
+| `src/clinictune/model/` | Linear heads, MAP Platt calibration, class-conditional conformal, **local adaptation layer**, shift tests, OOD, metrics, bundle format |
+| `src/clinictune/site/` | Onboarding (shift → before → two cross-fitted strategies → deploy), zip ingestion, report card |
+| `src/clinictune/experiments.py` | Leave-one-hospital-out, subgroup analysis, shortcut tests |
+| `src/clinictune/api/` | FastAPI service, SQLite store, monitoring and alerts |
+| `web/` | No-build UI: lightbox and screening slip, self-hosted Anek fonts (Latin, Devanagari, Kannada), works offline |
+
+Embeddings for training are extracted **with the same ONNX model and preprocessing code used in production**,
+so there is no train/serve skew.
 
 ---
 
-## Quick start (synthetic demo, about 2 minutes)
+## Run it
+
+### Real model (about 2 to 3 hours on a CPU, about 12 GB download)
+
+```bash
+bash scripts/reproduce.sh
+```
+
+```bash
+CLINICTUNE_BUNDLE_DIR=models/clinictune-v1 uv run clinictune serve
+```
+
+Open http://localhost:8000. To try onboarding, register a clinic and upload `data/onboarding/idrid-dr.zip`
+(IDRiD, India, held out from training) or `data/onboarding/montgomery-tb.zip`. Then screen images from the
+matching `_unseen` folder, which the clinic's settings never saw. File names start with the true label.
+
+### Five-minute synthetic demo (no downloads)
 
 ```bash
 uv sync
@@ -105,213 +215,47 @@ uv run clinictune demo
 ```
 
 ```bash
-uv run clinictune serve --port 8000
+uv run clinictune serve
 ```
 
-Open http://localhost:8000.
+The demo uses cartoon images and a random-projection backbone. It exercises every code path, means nothing
+clinically, and the UI says so on every page.
 
-1. **Screen.** Pick *Fundus · DR* and upload any image from `data/onboarding/dr_clinic_new_unseen/` (file
-   names start with the true label). Without onboarding, this shifted clinic's images come back
-   **Uncertain: out of distribution**. That is intended.
-2. **Sites & onboarding.** Create a site, then upload `data/onboarding/dr_clinic_new.zip`. The report card
-   appears when the job finishes.
-3. **Screen** again with that site selected. The site calibration is now used.
-
-The demo uses **synthetic cartoon images** and a **random-projection backbone**. It exercises every code
-path and has **no clinical meaning**. The UI shows a banner saying so.
-
-## Using real data
+### Deploy
 
 ```bash
-uv sync --extra export
+CLINICTUNE_BUNDLE=clinictune-v1 docker compose up -d --build
 ```
 
-```bash
-uv run clinictune export-backbone dinov2-small --out models/backbones/dinov2-small
-```
+Set `CLINICTUNE_API_KEY` first; Compose refuses to start without it. `CLINICTUNE_BUNDLE` names the folder
+under `models/` to mount; it defaults to the synthetic `demo` bundle.
 
-```bash
-uv run clinictune export-backbone medsiglip-448 --out models/backbones/medsiglip-448
-```
+- **Image:** python:3.12-slim with ONNX Runtime on CPU. No PyTorch, runs as a non-root user with a read-only
+  filesystem and all capabilities dropped, and has a health check.
+- **Bundle:** mounted read-only and pinned by sha256, so tampered weights refuse to load.
+- **Privacy:** images are processed in memory and never stored. The audit log keeps only a fingerprint, the
+  decision and the versions used.
+- **HTTP:** strict Content-Security-Policy, bounded uploads, and zip ingestion that resists zip-slip and
+  zip bombs.
+- **Operations:** Prometheus metrics; rollback of any clinic's settings; an offline-capable UI.
 
-MedSigLIP is gated. Accept the Health AI Developer Foundations terms on Hugging Face and run `hf auth login`
-before exporting it.
-
-```bash
-uv run clinictune benchmark models/backbones/dinov2-small models/backbones/medsiglip-448
-```
-
-```bash
-uv run clinictune manifest shenzhen=/data/ChinaSet_AllFiles/CXR_png montgomery=/data/MontgomerySet/CXR_png tbx11k=/data/TBX11K mendeley_tb=/data/mendeley_tb aptos2019=/data/aptos2019 idrid=/data/IDRiD --out data/manifest.csv
-```
-
-```bash
-uv run clinictune licences --manifest data/manifest.csv --strict
-```
-
-```bash
-uv run clinictune loso --manifest data/manifest.csv --backbone-dir models/backbones/medsiglip-448 --tasks tb dr --repeats 20 --out reports/real
-```
-
-```bash
-uv run clinictune train --manifest data/manifest.csv --backbone-dir models/backbones/medsiglip-448 --bundle-dir models/medsiglip-v1 --tasks tb dr --exclude-sites mendeley_tb
-```
-
-```bash
-uv run clinictune shortcut --manifest data/manifest.csv --bundle-dir models/medsiglip-v1 --task tb
-```
-
-`train` refuses to run while any dataset in the manifest has an unverified licence. Read the licence, then
-set `verified: true` in `src/clinictune/data/datasets.yaml`. For local research runs you can pass
-`--allow-unverified-licences`.
-
-### Onboarding pack format
-
-A zip containing images plus `labels.csv`:
-
-```
-filename,label,patient_id
-img_001.png,1,P0001
-img_002.png,0,P0002
-```
-
-`label` is 1 for a confirmed positive (TB by NAAT/culture, or referable DR by grader) and 0 otherwise.
-`patient_id` is optional but recommended. Cross-fitting splits by patient, so leaving it out means two
-images of the same patient could land on both sides of a split.
-
----
-
-## Results
-
-### Real datasets: not yet run in this repository
-
-No real-data numbers are reported here yet. The datasets have to be downloaded under their own licences,
-and nothing in this repo should be read as a performance claim. Run the `loso` command above to produce
-`reports/real/loso.md` with this table per held-out site:
-
-| task | held-out site | strategy | k | sens | spec | ROC-AUC | PR-AUC | ECE | cov(neg) | cov(pos) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| tb | mendeley_tb | source_calibration | 0 | | | | | | | |
-| tb | mendeley_tb | site_recalibration | 10 / 50 / 100 | | | | | | | |
-| tb | mendeley_tb | site_only_head | 10 / 50 / 100 | – | – | | | – | – | – |
-
-Protocol notes for real data:
-- **TBX11K test labels are withheld.** ClinicTune uses the official *val* split as TBX11K's evaluation
-  data and labels it as such (`official_splits_used` in every bundle).
-- **APTOS** only has labels for `train.csv`, so all APTOS splits are carved from it.
-- TBX11K, APTOS and Mendeley TB release no patient IDs, so **image ≈ patient** there. That limitation is
-  recorded in the registry.
-- The held-out test half of each site is **never** used for fitting, threshold choice or model selection.
-
-### Synthetic sanity check (demo backbone): *not evidence about real performance*
-
-From `reports/synthetic/loso.md` (5 repeats, mean ± SD; coverage target 0.90). Abridged:
-
-| task | held-out site | strategy | k | sens | spec | ROC-AUC | ECE | cov(neg) | cov(pos) |
-|---|---|---|---|---|---|---|---|---|---|
-| tb | tb_site_a | source_calibration | 0 | 1.00 | 0.00 | 0.98 | 0.64 | **0.00 FAILS** | 1.00 |
-| tb | tb_site_a | site_recalibration | 10 | 0.79 ± 0.12 | 0.98 ± 0.04 | 0.98 | 0.23 | 1.00 | 1.00 |
-| tb | tb_site_a | site_recalibration | 100 | 0.88 ± 0.06 | 0.95 ± 0.03 | 0.98 | 0.06 | 0.91 | 0.89 |
-| tb | tb_clinic_new | source_calibration | 0 | 0.00 | 1.00 | 0.79 | 0.26 | 1.00 | **0.00 FAILS** |
-| tb | tb_clinic_new | site_recalibration | 50 | 0.97 ± 0.02 | 0.14 ± 0.09 | 0.79 | 0.04 | 0.95 | 0.97 |
-| dr | dr_clinic_new | source_calibration | 0 | 0.99 | 0.12 | 0.88 | 0.30 | **0.30 FAILS** | 1.00 |
-| dr | dr_clinic_new | site_recalibration | 50 | 0.79 ± 0.14 | 0.75 ± 0.18 | 0.88 | 0.11 | 0.90 | 0.89 |
-
-What the synthetic run shows. These are mechanism checks, not clinical claims:
-- **Negative result, as expected.** Under shift, training-site conformal coverage collapses for one class
-  (it misses the target at 6 of 7 held-out sites, and drops to 0% for one class at 4). Site recalibration
-  restores per-class coverage near the target.
-- **Recalibration cannot fix ranking.** At `tb_clinic_new` the ROC-AUC stays at 0.79 whatever k is.
-  Coverage is restored by producing many *Uncertain* outputs, and specificity at the sensitivity target is
-  poor. The onboarding verdict for that site is **not ready**. In the same run a head trained only on the
-  local labels reaches a higher AUC, which motivates the "local head" item in the roadmap.
-- With 10 labels the calibration is held near the training-site prior (by design), and sensitivity
-  intervals are wide. The report card shows the Clopper–Pearson interval so this is visible.
-
-**Same experiment with DINOv2-small** (`reports/synthetic_dinov2/loso.md`). A real backbone separates the
-synthetic cartoons perfectly (ROC-AUC 1.00 at both new clinics), and **training-site conformal coverage
-still fails** at both: 0.00 on negatives at `tb_clinic_new`, 0.73 on positives at `dr_clinic_new`.
-Perfect ranking does not make the training-site calibration valid at a new site. With 10 site labels,
-coverage is back to 1.00 / 1.00, at sensitivity 1.00 and specificity 1.00 on held-out site images.
-
-### Shortcut test (synthetic)
-
-The synthetic `tb_site_c` has a bright corner marker planted that correlates with the label.
-`clinictune shortcut` greys out the image centre and checks whether the border alone still predicts:
-
-| site | original | border only | centre crop 80% |
-|---|---|---|---|
-| tb_site_a | 0.998 | 0.551 | 0.988 |
-| tb_site_b | 0.989 | 0.483 | 0.961 |
-| **tb_site_c (marker)** | 0.990 | **0.808 ⚠** | 0.977 |
-| tb_clinic_new | 0.772 | 0.646 | 0.652 |
-
-Only the site with the planted shortcut is flagged. For real CXRs, add the Montgomery lung masks with the
-`mask_fn` hook to get the lungs-removed condition.
-
-### CPU inference (measured on an Intel Core Ultra 5 225H laptop, ONNX Runtime 1.x, fp32)
-
-| backbone | input | ms / image (batch 1, median) | status |
-|---|---|---|---|
-| DINOv2-small | 224 | 30 | exported and verified against PyTorch in this repo |
-| MedSigLIP-448 | 448 | *not measured here* (gated weights) | run `clinictune benchmark` after export |
-| demo random projection | 224 | 0.15 | demo only |
-
-Pick the backbone that meets the clinic's latency budget on its own hardware. The serving image needs no
-GPU and no PyTorch.
-
----
-
-## Deploying
-
-```bash
-docker compose up -d --build
-```
-
-Set `CLINICTUNE_API_KEY` first. Compose refuses to start without it.
-
-- **Image.** `python:3.12-slim`, ONNX Runtime CPU, non-root user, read-only root filesystem, all
-  capabilities dropped, and a health check on `/readyz`. The model bundle is **mounted read-only**, never
-  baked into the image.
-- **Integrity.** The backbone's sha256 is pinned in the bundle manifest. A tampered or partial file refuses
-  to load.
-- **Privacy.** Images are processed in memory and never written to disk. The audit log stores only the
-  image sha256, the decision and the versions used. No patient identifiers are accepted.
-- **Versioning and rollback.** Every onboarding creates a new calibration version. Any version can be
-  re-activated (`POST /v1/sites/{id}/calibrations/{task}/{v}/activate`). Calibrations are tied to a
-  bundle id, so after a model upgrade a site falls back to training-site settings with a warning until it
-  is re-onboarded.
-- **Monitoring.** `/metrics` exposes Prometheus counters and latency histograms.
-  `/v1/sites/{id}/monitoring` reports the decision mix, gate-failure and OOD rates, and observed
-  sensitivity/specificity once confirmatory results are entered (`POST /v1/screenings/{id}/outcome`).
-- **Uploads are bounded.** There are per-file and per-pack size limits. Zips are read in memory with
-  entry-count and uncompressed-size caps, which blocks zip-slip and zip-bomb attacks. Decompression-bomb
-  images are refused.
-- **Auth.** An optional shared API key (`X-API-Key`). For multi-user or networked deployments, put the
-  service behind a TLS reverse proxy with real authentication. Per-user auth is out of scope by design.
-
-Configuration (environment variables, prefix `CLINICTUNE_`): `BUNDLE_DIR`, `DATA_DIR`, `API_KEY`,
-`CORS_ORIGINS`, `MAX_UPLOAD_MB`, `MAX_ONBOARD_ZIP_MB`, `MAX_ONBOARD_IMAGES`, `ORT_THREADS`,
-`ONBOARD_WORKERS`, `LOG_LEVEL`, `LOG_JSON`, `STORE_AUDIT_LOG`.
-
-## API
+### API
 
 | Method | Path | |
 |---|---|---|
 | GET | `/healthz`, `/readyz`, `/metrics` | liveness, readiness, Prometheus |
-| GET | `/v1/info` | bundle, tasks, internal metrics, languages, disclaimer |
-| POST | `/v1/screen` | multipart `file`, `task` (tb/dr), optional `site_id`, `lang` (en/hi/kn), `heatmap` |
-| POST | `/v1/screenings/{request_id}/outcome` | `{"outcome": 0 or 1}`, the confirmatory result |
-| GET/POST | `/v1/sites` | list / create `{site_id, name}` |
-| POST | `/v1/sites/{id}/onboard` | multipart `task`, `pack` (zip), returns `job_id` |
-| GET | `/v1/jobs/{job_id}` | onboarding progress / result |
-| GET | `/v1/sites/{id}/report[.html]?task=&version=` | report card (JSON / printable HTML) |
-| POST | `/v1/sites/{id}/calibrations/{task}/{version}/activate` | rollback / roll forward |
-| GET | `/v1/sites/{id}/monitoring?task=&days=` | post-deployment monitoring |
+| GET | `/v1/info`, `/v1/evidence` | bundle, tasks and backbones; validation evidence |
+| POST | `/v1/screen` | multipart `file`, `task` (tb or dr), optional `site_id`, `lang` (en, hi, kn) |
+| POST | `/v1/screenings/{id}/outcome` | record the confirmatory test result |
+| GET, POST | `/v1/sites` | list or register clinics |
+| POST | `/v1/sites/{id}/onboard` | onboarding pack (zip) as a background job; poll `/v1/jobs/{job_id}` |
+| GET | `/v1/sites/{id}/report[.html]` | report card, any version |
+| POST | `/v1/sites/{id}/calibrations/{task}/{version}/activate` | roll back or forward |
+| GET | `/v1/sites/{id}/monitoring`, `/v1/sites/{id}/screenings.csv` | monitoring with alerts; screening log |
 
 OpenAPI docs are at `/docs`.
 
-## Development
+### Development
 
 ```bash
 uv run pytest
@@ -321,39 +265,46 @@ uv run pytest
 uv run ruff check src tests
 ```
 
-The tests cover: class-conditional coverage holding per class; uninformative conformal sets when a class
-has too few labels; calibration with a prior; patient-leakage detection; the exact heatmap decomposition;
-the decision table; loaders; the quality gate rejecting the wrong modality; zip-pack validation; bundle
-hash verification; that held-out sites are never trained on; and the full API flow (screen → onboard twice
-→ report → rollback → outcome → monitoring). CI also fails if data or weights are committed.
+The tests cover:
+- per-class conformal coverage, and sets that never exclude a class when it has too few labels;
+- calibration with a prior, and the residual adaptation layer fixing a flipped feature;
+- patient-leakage detection and the exact heatmap decomposition;
+- the decision table and the quality gate;
+- fundus-field standardisation (two framings of one retina give the same model view), and heatmaps and
+  boxes mapped back onto the original photo;
+- loaders and clinical-reading parsing;
+- monitoring alerts and the CSV export;
+- the evidence and pack commands;
+- the full API: screen, onboard twice, report, roll back, record an outcome, monitor.
+
+CI also syntax-checks the UI and fails if data or weights are committed.
+
+---
 
 ## Limitations
 
-- **No real-data validation yet**, and no prospective or clinical evaluation. Synthetic results only show
-  that the mechanisms work.
-- The quality gate's thresholds are heuristic. Tune and validate them on each real dataset. A learned
-  gradability head (for example from EyeQ labels, following the NaIA-RD approach) is a planned upgrade for DR.
-- The Hindi and Kannada notes are **drafts** that a native-speaking clinician has not reviewed. The API
-  returns `translation_reviewed: false` and the UI shows it.
-- Conformal guarantees are **marginal over the site's population** and assume local labels are
-  exchangeable with future patients. They are not guarantees for subgroups (age, sex, HIV status, device)
-  unless you calibrate per subgroup with enough labels.
-- With 50–100 local labels, sensitivity intervals are wide (often ±15 points). The report card shows them,
-  so read the interval.
-- Datasets without patient IDs (TBX11K, APTOS, Mendeley TB) can leak the same patient across splits.
-- Recalibration fixes calibration, not discrimination. A site whose AUC is low needs a local head or a
-  different backbone. The verdict says "not ready" in that case.
+- **No prospective or clinical validation.** These are retrospective results on public data.
+- **Small held-out hospitals give wide intervals.** Montgomery has 138 images, so its pool holds 69. The
+  report card shows 95% intervals: read those, not the point estimate.
+- **The guarantee is per class, not per subgroup.** The Shenzhen gap for women shows this matters.
+- **TBX11K, APTOS and DDR release no patient IDs.** There, image is treated as patient. APTOS comes from a
+  224 px mirror.
+- **Hindi and Kannada notes are drafts.** A native-speaking clinician has not reviewed them, and the API and
+  UI say so.
+- **Quality-gate rules are heuristic.** The learned gradability model covers fundus photos only.
+- **Licences need a human sign-off.** Every source is recorded and was read on 2026-11-03, but
+  [`datasets.yaml`](src/clinictune/data/datasets.yaml) stays `verified: false` until someone on the team
+  signs off. TBX11K and APTOS are research-use only.
 
 ## Roadmap
 
-- "Local head" onboarding option when cross-fitted evidence shows it beats recalibration (the synthetic
-  LOSO suggests it can).
-- Learned DR gradability head; CXR view classifier (PA/AP/lateral).
-- Per-subgroup conformal calibration when subgroup labels exist.
-- Lung-mask shortcut condition wired to the Montgomery masks.
+- Per-subgroup conformal calibration once a clinic has enough labels per group.
+- A learned CXR view and quality classifier (PA, AP or lateral; rotation; inspiration).
+- MedSigLIP and RETFound backbones (the exporter supports them; they need gated access).
+- Review of the Hindi and Kannada notes by native-speaking clinicians.
 
 ## Licences
 
-Code: Apache-2.0. Datasets and model weights keep **their own** licences. See
-[`src/clinictune/data/datasets.yaml`](src/clinictune/data/datasets.yaml) and
-[docs/DATASETS.md](docs/DATASETS.md). No data or weights are distributed with this repository.
+Code: Apache-2.0. Fonts: Anek by Ek Type, SIL Open Font License (`web/fonts/OFL.txt`). Datasets and model
+weights keep **their own** terms; see [docs/DATASETS.md](docs/DATASETS.md). No data or weights are
+distributed with this repository.
