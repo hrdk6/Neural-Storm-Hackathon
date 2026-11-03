@@ -54,7 +54,8 @@ def write_manifest(records: Iterable[Record], path: str | Path) -> int:
 
 
 def read_manifest(path: str | Path) -> list[Record]:
-    with Path(path).open(newline="", encoding="utf-8") as fh:
+    # utf-8-sig: tolerate the byte-order mark that Excel and PowerShell add to CSV files.
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
         rows = list(csv.DictReader(fh))
     return [
         Record(

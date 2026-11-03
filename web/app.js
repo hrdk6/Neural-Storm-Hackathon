@@ -1132,13 +1132,23 @@ function subgroupSection(ev, task) {
   if (!rows || !rows.length) return null;
   const varLabel = { sex: "Sex", age: "Age" };
   const grp = (v, g) => (v === "sex" ? { M: "Men", F: "Women" }[g] || g : g);
+  const covCell = (v) => el("td", { text: pct(v), class: v !== undefined && v !== null && v < 0.85 ? "bad" : null });
+  const head = ["Hospital", "Group", "Images per test", "Sensitivity", "Specificity", "Coverage, positives", "Coverage, negatives"];
+  const body = rows.map((r) => el("tr", {},
+    el("td", { text: siteLabel(r.held_out_site) }),
+    el("td", { text: `${varLabel[r.variable] || r.variable}: ${grp(r.variable, r.group)}` }),
+    el("td", { text: r.n_per_repeat }),
+    el("td", { text: pct(r.sensitivity) }),
+    el("td", { text: pct(r.specificity) }),
+    covCell(r.coverage_pos),
+    covCell(r.coverage_neg)));
+  const table = el("table", { class: "data-table" },
+    el("thead", {}, el("tr", {}, head.map((h) => el("th", { text: h })))),
+    el("tbody", {}, body));
   return el("section", { class: "v-section" },
     el("h2", { text: "Does it work equally for women, men and older patients?" }),
-    el("p", { text: "Coverage is guaranteed per class, not per subgroup. After recalibration, the held-out hospitals with recorded sex and age were broken down by group. Small groups give noisy numbers; a gap here is a reason to calibrate per group once enough local labels exist." }),
-    el("div", { class: "register-wrap" }, el("table", { class: "data-table" },
-      el("thead", {}, el("tr", {}, ["Hospital", "Group", "Images per test", "Sensitivity", "Specificity", "Coverage, positives", "Coverage, negatives"].map((h) => el("th", { text: h })))),
-      el("tbody", {}, rows.map((r) => el("tr", {}, [siteLabel(r.held_out_site), `${varLabel[r.variable] || r.variable}: ${grp(r.variable, r.group)}`, r.n_per_repeat,
-        pct(r.sensitivity), pct(r.specificity), pct(r.coverage_pos), pct(r.coverage_neg)].map((v) => el("td", { text: v }))))))));
+    el("p", { text: "Coverage is guaranteed per class, not per subgroup. After recalibration, the held-out hospitals with recorded sex and age were broken down by group. Coverage below 85% is shown in red: there, the 90% guarantee failed for that group. Small groups give noisy numbers; a gap is a reason to calibrate per group once enough local labels exist." }),
+    el("div", { class: "register-wrap" }, table));
 }
 
 /* ================================================================ about */
