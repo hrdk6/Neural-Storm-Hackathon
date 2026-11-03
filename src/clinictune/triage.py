@@ -2,7 +2,7 @@
 
 Decision rule (sensitivity-first; missing disease is the costlier error in screening):
 
-    gate failed                                   -> UNCERTAIN (retake)
+    gate failed (rules or learned gradability)    -> UNCERTAIN (retake)
     embedding out of distribution                 -> UNCERTAIN (escalate)
     set == {refer}                                -> REFER
     set == {refer, low} and p >= site threshold   -> REFER
@@ -21,9 +21,11 @@ from typing import Any
 import numpy as np
 
 from clinictune import DISCLAIMER, explain, i18n, imaging, quality
+from clinictune.model.adapt import ResidualHead
 from clinictune.model.bundle import Bundle
 from clinictune.model.calibration import Platt
 from clinictune.model.conformal import ClassConditionalConformal
+from clinictune.quality import Check
 from clinictune.site.onboarding import SiteCalibration
 
 
@@ -40,6 +42,8 @@ class Calibration:
     conformal: ClassConditionalConformal
     ood_threshold: float
     source: str  # "site:<id>:v<n>" or "training-sites"
+    residual: ResidualHead | None = None
+    strategy: str = "training-sites"
 
 
 def decide(p: float, in_set: np.ndarray, threshold: float) -> tuple[Decision, str]:
@@ -65,7 +69,13 @@ class Screener:
         tm = self.bundle.tasks[task]
         if site is not None and site.bundle_id == self.bundle.bundle_id:
             return Calibration(
-                site.platt, site.threshold, site.conformal, site.ood_threshold, f"site:{site.site_id}:v{site.version}"
+                site.platt,
+                site.threshold,
+                site.conformal,
+                site.ood_threshold,
+                f"site:{site.site_id}:v{site.version}",
+                site.residual,
+                site.strategy,
             )
         return Calibration(tm.platt, tm.threshold, tm.conformal, tm.ood.threshold, "training-sites")
 
@@ -77,24 +87,23 @@ class Screener:
         site: SiteCalibration | None = None,
         lang: str = "en",
         heatmap: bool = True,
+        similar: int = 6,
     ) -> dict[str, Any]:
         t0 = time.perf_counter()
         if task not in self.bundle.tasks:
             raise KeyError(f"task {task!r} not in bundle (has {sorted(self.bundle.tasks)})")
         tm = self.bundle.tasks[task]
+        backbone = self.bundle.backbone_for(task)
         cal = self.calibration_for(task, site)
         rgb = imaging.decode(data)
         gate = quality.check(task, rgb)
         result: dict[str, Any] = {
             "task": task,
             "image_sha256": hashlib.sha256(data).hexdigest(),
-            "quality_gate": gate.to_dict(),
+            "image_size": [int(rgb.shape[1]), int(rgb.shape[0])],
             "calibration": cal.source,
-            "model": {
-                "bundle_id": self.bundle.bundle_id,
-                "backbone": self.bundle.backbone.spec.name,
-                "demo": self.bundle.is_demo,
-            },
+            "adaptation": cal.strategy,
+            "model": {"bundle_id": self.bundle.bundle_id, "backbone": backbone.spec.name, "demo": self.bundle.is_demo},
             "disclaimer": DISCLAIMER,
             "warnings": [],
         }
@@ -104,6 +113,28 @@ class Screener:
             )
         if self.bundle.is_demo:
             result["warnings"].append("DEMO model trained on synthetic images - outputs are meaningless clinically.")
+
+        timings: dict[str, float] = {}
+        emb = tokens = None
+        if gate.passed:
+            t1 = time.perf_counter()
+            emb, tokens = backbone.embed([rgb])
+            timings["backbone_ms"] = round((time.perf_counter() - t1) * 1000, 1)
+            if tm.gradability is not None:
+                p_bad = float(tm.gradability.p_ungradable(emb)[0])
+                ok = p_bad < tm.gradability.threshold
+                gate.checks.append(
+                    Check(
+                        "learned_gradability",
+                        ok,
+                        p_bad,
+                        f"< {tm.gradability.threshold:.2f}",
+                        "A model trained on expert image-quality labels judges this image ungradable "
+                        "(focus, exposure, artefacts or field of view). Please retake.",
+                    )
+                )
+                gate.passed = gate.passed and ok
+        result["quality_gate"] = gate.to_dict()
 
         if not gate.passed:
             result.update(
@@ -117,9 +148,12 @@ class Screener:
             result["latency_ms"] = round((time.perf_counter() - t0) * 1000, 1)
             return result
 
-        emb, tokens = self.bundle.backbone.embed([rgb])
+        assert emb is not None and tokens is not None
         ood_score = float(tm.ood.score(emb)[0])
-        p = float(cal.platt(tm.head.logit(emb))[0])
+        logit = tm.head.logit(emb)
+        if cal.residual is not None:
+            logit = logit + cal.residual.logit(tm.head, emb)
+        p = float(cal.platt(logit)[0])
         in_set = cal.conformal.predict_sets(np.array([p]))[0]
         labels = [name for name, keep in zip(("low_risk", "refer"), in_set, strict=True) if keep]
         ood = {"score": ood_score, "threshold": cal.ood_threshold, "flagged": ood_score > cal.ood_threshold}
@@ -138,7 +172,15 @@ class Screener:
             note=i18n.note(lang, note_key[decision], task),
         )
         if heatmap:
-            grid = explain.contribution_map(tm.head, tokens[0], self.bundle.backbone.spec.grid)
+            contrib = tm.head.token_contributions(tokens[0])
+            if cal.residual is not None:
+                contrib = contrib + cal.residual.token_contributions(tm.head, tokens[0])
+            grid = contrib.reshape(backbone.spec.grid)
             result["heatmap_png"] = explain.to_data_uri(explain.overlay_png(rgb, grid))
-        result["latency_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+            result["regions"] = explain.top_regions(grid, k=3)
+        if similar and tm.library is not None:
+            result["similar_cases"] = tm.library.nearest(emb[0], k=similar)
+        timings["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        result["timings"] = timings
+        result["latency_ms"] = timings["total_ms"]
         return result
