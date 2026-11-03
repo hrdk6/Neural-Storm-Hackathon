@@ -1123,7 +1123,7 @@ function shortcutSection(ev, task) {
     el("h2", { text: "Is it reading the lungs, or the hospital's markings?" }),
     el("p", { text: task === "tb"
       ? "Models can learn shortcuts such as hospital text, markers or collimation. Here the trained model scores chest X-rays with the centre blanked out, so only a border strip is left, and, for Montgomery, with both lung fields blanked using the manual lung masks. A score near chance means the model cannot do its job without the anatomy."
-      : "Models can learn shortcuts such as camera overlays, text or a site's vignetting. Here the trained model scores fundus photos with the whole retina blanked out, so only the background around it is left. A score near chance means the model cannot do its job without the retina." }),
+      : "Models can learn shortcuts such as camera overlays, text or a site's vignetting. Here the trained model scores fundus photos with the whole retina blanked out, so only the background around it is left. A score near chance means the model cannot do its job without the retina. The first version of this model failed this test (0.77 at APTOS): the size and position of the retinal field, which reveal the camera, predicted the diagnosis by themselves. Every fundus photo is now standardised to the same frame before the model sees it, and these results are after that fix." }),
     legend(present.map(([, label, color]) => ({ label, color: cssVar(color) }))),
     el("figure", { class: "chart", style: "margin-top:10px" }, svg),
     tableView(["Hospital", "Condition", "ROC-AUC", "Images"], rows.map((r) => [siteLabel(r.site), r.condition.replace(/_/g, " "), num(r.roc_auc, 3), r.n])),
