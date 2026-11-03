@@ -325,14 +325,30 @@ def shortcut_test(
     backbone: OnnxBackbone,
     cache_dir: str | Path,
     lung_masks: dict[str, Path] | None = None,
+    max_per_site: int | None = 300,
+    original_cache: str | Path | None = None,
+    seed: int = 0,
 ) -> list[dict]:
     """ROC-AUC of the trained head under image perturbations, per site.
+
+    ``max_per_site`` samples (stratified by label) to bound CPU time - every perturbation needs a fresh
+    backbone pass. ``original_cache`` lets the unperturbed condition reuse embeddings already extracted.
 
     border_only AUC well above 0.5 => the model can predict from the image border (markers, text, collimation).
     A large drop under center_crop points the same way. ``lung_masks`` (image path -> left-lung mask, e.g.
     Montgomery's manual masks) adds ``lungs_removed``: if the model still separates TB from normal with both
     lung fields blanked out, it is reading something other than the lungs.
     """
+    if max_per_site:
+        rng = np.random.default_rng(seed)
+        keep: list[int] = []
+        for s in sorted({r.site for r in records}):
+            for lab in (0, 1):
+                idx = [i for i, r in enumerate(records) if r.site == s and r.label == lab]
+                take = int(round(max_per_site * len(idx) / max(1, sum(r.site == s for r in records))))
+                keep += sorted(rng.choice(idx, min(len(idx), max(take, 1)), replace=False).tolist()) if idx else []
+        masked = {i for i, r in enumerate(records) if lung_masks and r.image_path in lung_masks}
+        records = [records[i] for i in sorted(set(keep) | masked)]
     y, _, sites = records_arrays(records)
     conds: dict[str, Callable[[np.ndarray], np.ndarray] | None] = {
         "original": None,
@@ -344,7 +360,12 @@ def shortcut_test(
     for cond, fn in conds.items():
         # Key the cache on the transform's bytecode so editing a transform never reuses stale embeddings.
         tag = hashlib.sha256(fn.__code__.co_code).hexdigest()[:8] if fn else "none"
-        X = extract(records, backbone, Path(cache_dir) / f"shortcut_{name}_{tm.task}_{cond}_{tag}.npz", transform=fn)
+        path = (
+            Path(original_cache)
+            if (fn is None and original_cache)
+            else (Path(cache_dir) / f"shortcut_{name.replace('@', '-')}_{tm.task}_{cond}_{tag}.npz")
+        )
+        X = extract(records, backbone, path, transform=fn)
         z = tm.head.logit(X)
         for s in sorted(set(sites.tolist())):
             m = sites == s
@@ -369,9 +390,8 @@ def shortcut_test(
             for i in idx
         ]
         z = tm.head.logit(np.stack(embs))
-        z_orig = tm.head.logit(
-            extract([records[i] for i in idx], backbone, Path(cache_dir) / f"shortcut_{name}_{tm.task}_masked_orig.npz")
-        )
+        orig_path = Path(original_cache) if original_cache else Path(cache_dir) / f"shortcut_{tm.task}_masked_orig.npz"
+        z_orig = tm.head.logit(extract([records[i] for i in idx], backbone, orig_path))
         ys, ss = y[idx], sites[idx]
         for s in sorted(set(ss.tolist())):
             m = ss == s

@@ -186,7 +186,17 @@ def cmd_shortcut(a: argparse.Namespace) -> None:
         for r in recs:
             if r.dataset == "montgomery" and (m := montgomery_lung_mask(r.image_path)) is not None:
                 masks[r.image_path] = m
-    rows = shortcut_test(recs, b.tasks[a.task], b.backbone_for(a.task), a.cache_dir, lung_masks=masks or None)
+    bb = b.backbone_for(a.task)
+    original = Path(a.cache_dir) / f"{bb.spec.name.replace('@', '-')}_{a.task}_all.npz"  # shared with loso/train
+    rows = shortcut_test(
+        recs,
+        b.tasks[a.task],
+        bb,
+        a.cache_dir,
+        lung_masks=masks or None,
+        max_per_site=a.max_per_site,
+        original_cache=original,
+    )
     write_csv(rows, Path(a.out) / f"shortcut_{a.task}.csv")
     for r in rows:
         warn = (
