@@ -25,6 +25,8 @@ class Record:
     task: str
     dataset: str
     official_split: str = ""
+    sex: str = ""  # "M" / "F" / "" (unknown) - only where the source releases it
+    age: str = ""  # years as text, "" when unknown
 
     def __post_init__(self) -> None:
         if self.label not in (0, 1):
@@ -63,6 +65,8 @@ def read_manifest(path: str | Path) -> list[Record]:
             task=r["task"],
             dataset=r["dataset"],
             official_split=r.get("official_split", "") or "",
+            sex=r.get("sex", "") or "",
+            age=r.get("age", "") or "",
         )
         for r in rows
     ]
