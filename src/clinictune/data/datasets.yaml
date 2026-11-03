@@ -1,116 +1,170 @@
 # Dataset and model-weight registry.
 #
-# Every entry records where the data comes from and the terms it is released under.
-# `verified: false` means the licence text below is the project's best understanding and a human
-# has NOT yet re-read the source page. `clinictune licences --strict` exits non-zero while any
-# dataset used in a run is unverified - flip it to true (and add `verified_on` / `verified_by`)
-# only after reading the licence at the URL yourself. Terms change; re-check before publishing.
+# Every entry records where the data comes from, the exact source ClinicTune downloads from
+# (`clinictune fetch`), and the terms it is released under.
+#
+# `source_checked_on` = the date the source page / licence file was read while building this registry.
+# `verified: false`   = a human on the team has NOT yet signed off the terms for this use.
+# `clinictune licences --strict` exits non-zero while any dataset used in a run is unverified - flip it to
+# true (and add `verified_on` / `verified_by`) only after reading the licence at the URL yourself.
+# Terms change; re-check before publishing results or deploying.
 #
 # Nothing listed here is redistributed by this repository. Data and weights are never committed.
 
 datasets:
-  tbx11k:
-    task: tb
-    title: "TBX11K (Liu et al., CVPR 2020)"
-    url: "https://mmcheng.net/tb/"
-    licence: "Research use; see dataset page. Test-split labels are withheld for the online benchmark."
-    commercial_use: "unclear - verify"
-    access: "Public download after accepting terms on the project page / Kaggle mirror."
-    patient_ids: false
-    notes: >
-      No patient identifiers are released, so each image is treated as its own patient (a known
-      limitation: duplicate patients across splits cannot be ruled out). The official test labels are
-      hidden, so ClinicTune evaluates on the official *val* split and says so in every table.
-    citation: "Liu Y, Wu Y-H, Ban Y, Wang H, Cheng M-M. Rethinking computer-aided tuberculosis diagnosis. CVPR 2020."
-    verified: false
-
   shenzhen:
     task: tb
-    title: "Shenzhen Hospital CXR set (NLM)"
-    url: "https://lhncbc.nlm.nih.gov/LHC-downloads/downloads.html#tuberculosis-image-data-sets"
-    licence: "Released by the U.S. National Library of Medicine for research; cite Jaeger et al. 2014."
+    title: "Shenzhen Hospital CXR set (U.S. National Library of Medicine)"
+    url: "https://data.lhncbc.nlm.nih.gov/public/Tuberculosis-Chest-X-ray-Datasets/Shenzhen-Hospital-CXR-Set/"
+    fetched_from: "Official NLM public directory (CXR_png/, ClinicalReadings/)"
+    licence: "Public NLM research release; cite Jaeger et al. 2014."
     commercial_use: "unclear - verify"
-    access: "Public download."
+    access: "Public HTTPS download, no account."
     patient_ids: true
-    notes: "One image per patient (CHNCXR_####_L.png, L=0 normal / 1 TB). Lung masks available from community releases."
+    images: 662
+    site: "Shenzhen No.3 People's Hospital, Guangdong, China"
+    notes: "One image per patient (CHNCXR_####_L.png, L=0 normal / 1 TB). Clinical readings give sex and age, used for subgroup analysis. Includes some paediatric AP images."
     citation: "Jaeger S, et al. Two public chest X-ray datasets for computer-aided screening of pulmonary diseases. Quant Imaging Med Surg 2014;4(6):475-7."
+    source_checked_on: "2026-11-03"
     verified: false
 
   montgomery:
     task: tb
-    title: "Montgomery County CXR set (NLM)"
-    url: "https://lhncbc.nlm.nih.gov/LHC-downloads/downloads.html#tuberculosis-image-data-sets"
-    licence: "Released by the U.S. National Library of Medicine for research; cite Jaeger et al. 2014."
+    title: "Montgomery County CXR set (U.S. National Library of Medicine)"
+    url: "https://data.lhncbc.nlm.nih.gov/public/Tuberculosis-Chest-X-ray-Datasets/Montgomery-County-CXR-Set/MontgomerySet/"
+    fetched_from: "Official NLM public directory (CXR_png/, ClinicalReadings/, ManualMask/)"
+    licence: "Public NLM research release; cite Jaeger et al. 2014."
+    commercial_use: "unclear - verify"
+    access: "Public HTTPS download, no account."
+    patient_ids: true
+    images: 138
+    site: "Montgomery County TB control program, Maryland, USA"
+    notes: "Manual left/right lung masks drive the lungs-removed shortcut test. Clinical readings give sex and age."
+    citation: "Jaeger S, et al. Quant Imaging Med Surg 2014;4(6):475-7."
+    source_checked_on: "2026-11-03"
+    verified: false
+
+  tbx11k:
+    task: tb
+    title: "TBX11K (Liu et al., CVPR 2020)"
+    url: "https://github.com/yun-liu/tuberculosis"
+    fetched_from: "Official Google Drive link in the project README (TBX11K.zip, 3.3 GB)"
+    licence: "Released for research by the authors; test labels withheld for the online challenge. No explicit licence file found - verify."
     commercial_use: "unclear - verify"
     access: "Public download."
-    patient_ids: true
-    notes: "138 images (MCUCXR_####_L.png). Manual lung masks included - used for the lung-masking shortcut test."
-    citation: "Jaeger S, et al. Quant Imaging Med Surg 2014;4(6):475-7."
+    patient_ids: false
+    images: 11200
+    site: "Hospitals in China (TBX11K)"
+    notes: >
+      ClinicTune uses the labelled train+val lists: every TB image (800) plus a seeded random sample of 700
+      healthy and 700 sick-but-non-TB images. Sick-non-TB negatives make this site much harder than NLM.
+      No patient IDs, so image = patient (limitation). The zip also contains the authors' code: never executed.
+    citation: "Liu Y, Wu Y-H, Ban Y, Wang H, Cheng M-M. Rethinking computer-aided tuberculosis diagnosis. CVPR 2020."
+    source_checked_on: "2026-11-03"
     verified: false
 
   mendeley_tb:
     task: tb
-    title: "Mendeley Data TB chest X-ray set"
+    title: "Mendeley Data TB chest X-ray set (optional, not used in the shipped bundle)"
     url: "https://data.mendeley.com/  (record the exact DOI of the version you download)"
     licence: "Mendeley Data sets are usually CC BY 4.0 - confirm on the record page."
     commercial_use: "depends on record - verify"
     access: "Public download."
     patient_ids: false
-    notes: "Folder-per-class layout. Record the DOI in `source_doi` below once chosen."
+    notes: "Folder-per-class layout (load with the mendeley_tb loader)."
     source_doi: null
     citation: "Cite the record's DOI."
     verified: false
 
+  ddr:
+    task: dr
+    title: "DDR - Diabetic Retinopathy dataset (Nankai University)"
+    url: "https://github.com/nkicsl/DDR-dataset"
+    fetched_from: "Hugging Face mirror YukunZhou/MICCAI_FLARE_diabetic_retinopathy (stratified subset)"
+    licence: "CC BY 4.0 (as stated in the mirror's metadata and the DDR release)."
+    commercial_use: "yes with attribution (CC BY 4.0) - verify"
+    access: "Public download, no account."
+    patient_ids: false
+    images: 13673
+    site: "147 hospitals across 23 provinces of China"
+    notes: >
+      ClinicTune fetches a seeded stratified subset: 800 / 150 / 700 / 150 / 300 images of ICDR grades 0-4
+      plus 400 images graded *ungradable*. The ungradable labels train the learned gradability gate.
+    citation: "Li T, et al. Diagnostic assessment of deep learning algorithms for diabetic retinopathy screening. Information Sciences 2019;501:511-522."
+    source_checked_on: "2026-11-03"
+    verified: false
+
   aptos2019:
     task: dr
-    title: "APTOS 2019 Blindness Detection (Kaggle)"
+    title: "APTOS 2019 Blindness Detection (Aravind Eye Hospital, India)"
     url: "https://www.kaggle.com/competitions/aptos2019-blindness-detection/data"
-    licence: "Kaggle competition rules - data use is restricted (non-commercial / competition terms)."
+    fetched_from: "Hugging Face mirror bumbledeep/aptos (all 3,662 labelled images, resized to 224x224 by the mirror)"
+    licence: "Kaggle competition rules govern the original data; the mirror is labelled MIT by its uploader, which does not override the original terms. Treat as research-only."
     commercial_use: "no (per competition rules) - verify"
-    access: "Kaggle account and acceptance of competition rules."
+    access: "Kaggle account for the original; mirror is public."
     patient_ids: false
-    notes: >
-      Grades 0-4; ClinicTune uses referable DR = grade >= 2 (moderate NPDR or worse). Only train.csv has
-      labels, so all splits are carved from it. Near-duplicate images are known to exist.
+    images: 3662
+    site: "Aravind Eye Hospital rural screening, India"
+    notes: "Referable DR = grade >= 2. The mirror's 224px resolution is itself a site-specific acquisition difference."
     citation: "APTOS 2019 Blindness Detection, Asia Pacific Tele-Ophthalmology Society, Kaggle 2019."
+    source_checked_on: "2026-11-03"
     verified: false
 
   idrid:
     task: dr
     title: "IDRiD - Indian Diabetic Retinopathy Image Dataset (disease grading)"
     url: "https://ieee-dataport.org/open-access/indian-diabetic-retinopathy-image-dataset-idrid"
-    licence: "CC BY 4.0 (IEEE DataPort open access)."
+    fetched_from: "Hugging Face mirror amin-nejad/idrid-disease-grading (ships the CC BY 4.0 licence file)"
+    licence: "CC BY 4.0."
     commercial_use: "yes with attribution (CC BY 4.0) - verify"
-    access: "Public download (IEEE account)."
+    access: "Public download."
     patient_ids: false
-    notes: "516 images from an Indian eye clinic; official train/test split is used as-is."
+    images: 516
+    site: "Eye clinic in Nanded, Maharashtra, India"
+    notes: "Full-resolution (4288x2848) images; official train/test tags kept."
     citation: "Porwal P, et al. Indian Diabetic Retinopathy Image Dataset (IDRiD). IEEE Dataport 2018."
+    source_checked_on: "2026-11-03"
     verified: false
 
   messidor2:
     task: dr
-    title: "Messidor-2"
+    title: "Messidor-2 (optional, not used)"
     url: "https://www.adcis.net/en/third-party/messidor2/"
-    licence: "Licence agreement required; research use only."
+    licence: "Licence agreement required; research use only. Unofficial mirrors exist but are NOT used."
     commercial_use: "no - verify"
-    access: "Request via ADCIS licence form. Grades from Krause et al. (Kaggle) or Abramoff et al."
+    access: "Request via ADCIS licence form."
     patient_ids: true
-    notes: "Optional second DR set: images come in left/right eye pairs per exam - split by exam id."
-    citation: "Decencière E, et al. Feedback on a publicly distributed database: the Messidor database. Image Anal Stereol 2014."
+    notes: "Exam pairs: split by exam id."
+    citation: "Decencière E, et al. Image Anal Stereol 2014."
     verified: false
 
 backbones:
-  medsiglip-448:
-    hf_id: "google/medsiglip-448"
-    licence: "Health AI Developer Foundations (HAI-DEF) Terms of Use; gated on Hugging Face."
-    url: "https://huggingface.co/google/medsiglip-448"
-    notes: "Accept the terms on Hugging Face and authenticate before export. Weights are never committed."
+  rad-dino:
+    hf_id: "microsoft/rad-dino"
+    licence: "MIT (LICENSE file on the main branch); the model card restricts it to research, not clinical practice."
+    url: "https://huggingface.co/microsoft/rad-dino"
+    notes: "DINOv2 ViT-B/14 pre-trained on ~880k chest X-rays. Used for TB; exported at 392 px for CPU latency."
+    source_checked_on: "2026-11-03"
     verified: false
   dinov2-small:
     hf_id: "facebook/dinov2-small"
     licence: "Apache-2.0"
     url: "https://huggingface.co/facebook/dinov2-small"
-    notes: "Light CPU fallback (~22M params)."
+    notes: "Lightweight CPU fallback (~22M params, ~33 ms/image on a laptop CPU)."
+    source_checked_on: "2026-11-03"
+    verified: false
+  dinov2-base:
+    hf_id: "facebook/dinov2-base"
+    licence: "Apache-2.0"
+    url: "https://huggingface.co/facebook/dinov2-base"
+    notes: "Used for fundus (DR); ~99 ms/image on a laptop CPU."
+    source_checked_on: "2026-11-03"
+    verified: false
+  medsiglip-448:
+    hf_id: "google/medsiglip-448"
+    licence: "Health AI Developer Foundations (HAI-DEF) Terms of Use; gated on Hugging Face."
+    url: "https://huggingface.co/google/medsiglip-448"
+    notes: "Supported by the exporter; needs accepted terms + HF login. Not used in the shipped bundle."
     verified: false
   demo-randproj:
     hf_id: null
