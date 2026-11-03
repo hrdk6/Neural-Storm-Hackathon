@@ -13,7 +13,8 @@ uv run clinictune export-backbone rad-dino --size 392 --out models/backbones/rad
 uv run clinictune export-backbone dinov2-small --out models/backbones/dinov2-small
 uv run clinictune export-backbone dinov2-base --out models/backbones/dinov2-base
 mkdir -p reports/real
-uv run clinictune benchmark models/backbones/rad-dino-392 models/backbones/dinov2-base models/backbones/dinov2-small \
+uv run clinictune export-backbone rad-dino --out models/backbones/rad-dino
+uv run clinictune benchmark models/backbones/rad-dino models/backbones/rad-dino-392 models/backbones/dinov2-base models/backbones/dinov2-small \
   --n 10 > reports/real/benchmarks.jsonl
 
 # 3. Manifests (patient-level metadata; TBX11K: every TB image + 700 healthy + 700 sick-but-not-TB)
@@ -34,7 +35,7 @@ done
 # 5. Deployable bundle. Montgomery (USA) and IDRiD (India) are held out as "new clinics" for the onboarding demo.
 cat data/manifest_tb.csv > data/manifest.csv && tail -n +2 data/manifest_dr.csv >> data/manifest.csv
 uv run clinictune train --manifest data/manifest.csv \
-  --backbone tb=models/backbones/rad-dino-392 dr=models/backbones/dinov2-small \
+  --backbone tb=models/backbones/rad-dino-392 dr=models/backbones/dinov2-base \
   --gradability dr=data/raw/ddr --tasks tb dr --exclude-sites montgomery idrid \
   --bundle-dir models/clinictune-v1 --allow-unverified-licences
 
