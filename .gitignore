@@ -30,3 +30,4 @@ build/
 
 # Playwright screenshots from UI review
 /.playwright-mcp/
+/var-real/
