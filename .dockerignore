@@ -1,0 +1,17 @@
+.venv
+.git
+.github
+.pytest_cache
+.ruff_cache
+.mypy_cache
+**/__pycache__
+data
+models
+cache
+var
+reports
+tests
+*.onnx
+*.onnx.data
+*.npz
+.env
