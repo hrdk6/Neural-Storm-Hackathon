@@ -794,7 +794,7 @@ function dailyChart(daily, days) {
   const bw = Math.min(24, Math.max(3, band - 4));
   const max = niceMax(Math.max(1, ...daily.map((d) => d.n)));
   const y = (v) => T + (H - T - B) * (1 - v / max);
-  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Screening results per day, stacked by decision" });
+  const svg = sv("svg", { class: "viz", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Screening results per day, stacked by decision" });
   const series = [["low_risk", "--fill-low"], ["uncertain", "--fill-unc"], ["refer", "--fill-refer"]];
   for (let t = 0; t <= 4; t++) {
     const v = (max / 4) * t;
@@ -980,7 +980,7 @@ function aucChart(run, site) {
   const W = 300, H = 190, L = 34, R = 10, T = 10, B = 28;
   const x = (k) => L + (W - L - R) * (ks.indexOf(k) / Math.max(1, ks.length - 1));
   const y = (v) => T + (H - T - B) * (1 - (v - lo) / (1 - lo));
-  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `ROC-AUC by number of local labels at ${siteLabel(site)}` });
+  const svg = sv("svg", { class: "viz", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `ROC-AUC by number of local labels at ${siteLabel(site)}` });
   for (let v = lo; v <= 1.0001; v += (1 - lo) / 4) {
     svg.append(sv("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: cssVar("--rule"), "stroke-width": 1 }),
       sv("text", { x: L - 5, y: y(v) + 4, "text-anchor": "end", text: v.toFixed(2) }));
@@ -1017,7 +1017,7 @@ function coverageSection(run, task) {
   }
   const W = 640, rowH = 26, L = 230, R = 16, T = 22, H = T + rows.length * rowH + 24;
   const x = (v) => L + (W - L - R) * v;
-  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Conformal coverage per class before and after recalibration" });
+  const svg = sv("svg", { class: "viz viz-wide", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Conformal coverage per class before and after recalibration" });
   for (const v of [0, 0.25, 0.5, 0.75, 1]) {
     svg.append(sv("line", { x1: x(v), x2: x(v), y1: T - 6, y2: H - 22, stroke: cssVar("--rule"), "stroke-width": 1 }),
       sv("text", { x: x(v), y: H - 6, "text-anchor": "middle", text: `${v * 100}%` }));
@@ -1026,7 +1026,7 @@ function coverageSection(run, task) {
     sv("text", { x: x(0.9), y: T - 12, "text-anchor": "middle", text: "90% target" }));
   rows.forEach((r, i) => {
     const cy = T + i * rowH + rowH / 2;
-    svg.append(sv("text", { x: L - 10, y: cy + 4, "text-anchor": "end", text: `${siteLabel(r.site).split(",")[0]}, ${r.cls.toLowerCase()}` }));
+    svg.append(sv("text", { x: L - 10, y: cy + 4, "text-anchor": "end", text: `${siteLabel(r.site).split(",")[0]}, ${r.cls}` }));
     if (r.before !== undefined && r.after !== undefined) {
       svg.append(sv("line", { x1: x(r.before), x2: x(r.after), y1: cy, y2: cy, stroke: cssVar("--rule-strong"), "stroke-width": 2 }));
     }
@@ -1100,7 +1100,7 @@ function shortcutSection(ev, task) {
   const sites = [...new Set(rows.map((r) => r.site))];
   const W = 640, rowH = 30, L = 210, R = 16, T = 24, H = T + sites.length * rowH + 24;
   const x = (v) => L + (W - L - R) * ((v - 0.3) / 0.7);
-  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Shortcut test ROC-AUC by image condition" });
+  const svg = sv("svg", { class: "viz viz-wide", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Shortcut test ROC-AUC by image condition" });
   for (const v of [0.3, 0.5, 0.7, 0.9, 1.0]) {
     svg.append(sv("line", { x1: x(v), x2: x(v), y1: T - 6, y2: H - 22, stroke: cssVar("--rule"), "stroke-width": 1 }),
       sv("text", { x: x(v), y: H - 6, "text-anchor": "middle", text: v.toFixed(1) }));
