@@ -5,7 +5,7 @@
 services:
   clinictune:
     build: .
-    image: clinictune:0.1.0
+    image: clinictune:0.2.0
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"   # bind to localhost; put a TLS reverse proxy in front for network access
