@@ -177,7 +177,7 @@ class Screener:
                 contrib = contrib + cal.residual.token_contributions(tm.head, tokens[0])
             grid = contrib.reshape(backbone.spec.grid)
             result["heatmap_png"] = explain.to_data_uri(explain.overlay_png(rgb, grid))
-            result["regions"] = explain.top_regions(grid, k=3)
+            result["regions"] = explain.top_regions(grid, k=3, valid=explain.content_mask(rgb, backbone.spec.grid))
         if similar and tm.library is not None:
             result["similar_cases"] = tm.library.nearest(emb[0], k=similar)
         timings["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)

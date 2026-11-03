@@ -142,3 +142,15 @@ def test_residual_head_fixes_ranking_under_shift():
     # Heavy regularisation keeps the residual close to zero (stays near the source model).
     tiny = fit_residual(head, Xt[tr], yt[tr], lam=1e6)
     assert np.abs(tiny.coef).max() < 1e-2
+
+
+def test_top_regions_skip_black_background():
+    from clinictune.explain import content_mask, top_regions
+
+    rgb = np.zeros((140, 140, 3), np.uint8)
+    rgb[20:120, 20:120] = 150  # content in the middle, black surround
+    grid = np.zeros((14, 14))
+    grid[0, 0] = 5.0  # strongest contribution sits on the black corner
+    grid[7, 7] = 1.0
+    regions = top_regions(grid, k=1, valid=content_mask(rgb, (14, 14)))
+    assert regions[0]["x"] == 7 / 14 and regions[0]["y"] == 7 / 14

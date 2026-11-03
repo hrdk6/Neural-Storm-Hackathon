@@ -38,13 +38,23 @@ def overlay_png(rgb: np.ndarray, cmap_grid: np.ndarray, max_side: int = 512, alp
     return buf.getvalue()
 
 
-def top_regions(grid: np.ndarray, k: int = 3) -> list[dict[str, float]]:
-    """The k patches pushing hardest towards 'refer', as relative boxes (x, y, w, h in 0..1) for the UI."""
+def content_mask(rgb: np.ndarray, grid: tuple[int, int], min_level: float = 12.0) -> np.ndarray:
+    """True for patches that contain image content (not the black surround of a fundus photo or film edge)."""
+    gray = Image.fromarray(rgb).convert("L").resize((grid[1], grid[0]), Image.Resampling.BOX)
+    return np.asarray(gray, dtype=np.float32) > min_level
+
+
+def top_regions(grid: np.ndarray, k: int = 3, valid: np.ndarray | None = None) -> list[dict[str, float]]:
+    """The k patches pushing hardest towards 'refer', as relative boxes (x, y, w, h in 0..1) for the UI.
+
+    ``valid`` restricts the boxes to patches with image content; the heatmap itself stays exact and unmasked.
+    """
     gh, gw = grid.shape
     flat = grid.ravel()
     lim = float(np.abs(flat).max()) or 1.0
+    order = [i for i in np.argsort(-flat) if valid is None or valid.ravel()[i]]
     out = []
-    for i in np.argsort(-flat)[:k]:
+    for i in order[:k]:
         if flat[i] <= 0:
             break
         r, c = divmod(int(i), gw)
