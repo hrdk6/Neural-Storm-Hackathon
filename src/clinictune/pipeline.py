@@ -49,6 +49,7 @@ def train_gradability(
     cache: Path,
     max_reject_gradable: float = 0.05,
     seed: int = 0,
+    transform=None,  # type: ignore[no-untyped-def]
 ) -> GradabilityHead:
     """Linear 'ungradable' head on the task backbone's embeddings.
 
@@ -56,7 +57,7 @@ def train_gradability(
     bounces good images costs a clinic real time); sensitivity for ungradable images is reported honestly.
     """
     recs = [Record(p, y, f"q:{Path(p).stem}", "quality", "dr", "quality") for p, y in items]
-    X = extract(recs, backbone, cache)
+    X = extract(recs, backbone, cache, transform=transform)
     y = np.array([y for _, y in items])
     groups = np.array([r.patient_id for r in recs])
     tr, cal, te = patient_split(y, groups, [0.6, 0.2, 0.2], seed=seed)
@@ -146,15 +147,18 @@ def train_bundle(
         if not recs:
             raise ValueError(f"no training records for task {task}")
         log.info("task %s (%s): %s", task, name, summarize(recs))
-        X = extract(recs, backbone, Path(cache_dir) / f"{_safe(name)}_{task}_all.npz")  # shared with `loso`
+        pre = imaging.PREPROCESS.get(task, "") if not demo else ""
+        transform = imaging.view_transform(pre)
+        tag = f"_{imaging.view_tag(pre)}" if pre else ""
+        cache = Path(cache_dir) / f"{_safe(name)}_{task}{tag}_all.npz"  # shared with `loso`
+        X = extract(recs, backbone, cache, transform=transform)
         tm = train_task(X, recs, task, alpha=alpha, seed=seed, backbone=name)
+        tm.preprocess = pre
         if library_size:
             tm.library = build_library(recs, X, bundle_dir, task, size=library_size, seed=seed)
         if gradability and task in gradability:
             log.info("task %s: training gradability gate on %d images", task, len(gradability[task]))
-            tm.gradability = train_gradability(
-                gradability[task], backbone, Path(cache_dir) / f"{_safe(name)}_{task}_all.npz", seed=seed
-            )
+            tm.gradability = train_gradability(gradability[task], backbone, cache, seed=seed, transform=transform)
         task_models[task] = tm
     datasets = sorted({r.dataset for r in records if r.site not in exclude and r.task in tasks})
     return save_bundle(
