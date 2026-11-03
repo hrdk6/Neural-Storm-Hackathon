@@ -18,6 +18,7 @@ and `tasks/<task>.json`. Validation tables are in [`reports/real/`](../reports/r
 | | TB | DR |
 |---|---|---|
 | Frozen backbone | RAD-DINO (Microsoft, MIT licence; research use per model card), ONNX at 392 px | DINOv2-base (Meta, Apache-2.0), ONNX at 224 px |
+| Model view | the X-ray as uploaded | `fundus_field:512`: retinal field cropped, centred in a square, outside of the circle blanked (removes a camera-framing shortcut) |
 | Head | L2 logistic regression on mean-pooled patch tokens; C by patient-grouped CV | same |
 | Calibration | Platt on held-out patients; per clinic: MAP Platt with a pseudo-observation prior | same |
 | Clinic adaptation | Optional residual linear layer, chosen only when cross-fitted ROC-AUC improves by at least 0.02 | same |
@@ -42,7 +43,10 @@ That is the whole point of this project.
 - **Subgroups.** At Shenzhen, positive-class coverage after recalibration was 82% for women against 94% for
   men.
 - **Small clinics.** With few local positives the aid answers "Uncertain" more often, and intervals are wide.
-- **Shortcuts.** See the shortcut section of the Validation page for border-only and lungs-removed results.
+- **Shortcuts.** In APTOS, the framing of the retinal field alone predicts referable DR (ROC-AUC 0.85). The
+  first DR model partly used it (0.77 with the retina blanked). With the standardised model view, the
+  retina-blanked score is 0.63 / 0.55 / 0.49 (APTOS / DDR / IDRiD), under the 0.65 flag, with a little left at
+  APTOS. For TB, blanking both lung fields drops ROC-AUC to 0.50 (chance).
 
 ## Sign-off
 | Role | Name | Date |
