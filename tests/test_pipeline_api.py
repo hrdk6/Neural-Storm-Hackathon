@@ -21,14 +21,16 @@ from clinictune.site.ingest import read_pack, run_onboarding
 def test_bundle_loads_and_verifies_hash(demo, tmp_path):
     b = Bundle.load(demo["bundle"])
     assert set(b.tasks) == {"tb", "dr"} and b.is_demo
-    emb, tok = b.backbone.embed([np.zeros((300, 300, 3), np.uint8)])
-    gh, gw = b.backbone.spec.grid
-    assert tok.shape == (1, gh * gw, b.backbone.spec.dim) and emb.shape == (1, b.backbone.spec.dim)
+    bb = b.backbone_for("tb")
+    emb, tok = bb.embed([np.zeros((300, 300, 3), np.uint8)])
+    gh, gw = bb.spec.grid
+    assert tok.shape == (1, gh * gw, bb.spec.dim) and emb.shape == (1, bb.spec.dim)
+    assert b.tasks["tb"].library is not None and len(b.tasks["tb"].library.meta) > 0
     # Tampered weights must refuse to load.
     bad = tmp_path / "backbone.onnx"
-    bad.write_bytes(Path(demo["bundle"], "backbone.onnx").read_bytes() + b"x")
+    bad.write_bytes(Path(demo["bundle"], "backbones", "demo-randproj", "backbone.onnx").read_bytes() + b"x")
     with pytest.raises(IntegrityError):
-        OnnxBackbone(tmp_path, b.backbone.spec)
+        OnnxBackbone(tmp_path, bb.spec)
 
 
 def test_training_never_sees_held_out_sites(demo):
@@ -46,6 +48,8 @@ def test_onboarding_report_reports_before_and_after(demo):
     assert "class_1" in report["before_recalibration"]["conformal_coverage"]
     assert calib.bundle_id == b.bundle_id
     assert 0.5 <= report["shift"]["domain_auc"] <= 1.0
+    assert report["strategy"] in {"recalibrate", "adapt"} and "recalibrate" in report["strategies"]
+    assert (calib.residual is not None) == (report["strategy"] == "adapt")
     json.dumps(report, allow_nan=True)
 
 
@@ -54,7 +58,7 @@ def test_loso_runs(demo):
     b = Bundle.load(demo["bundle"])
     from clinictune.embed.cache import extract
 
-    X = extract(recs, b.backbone, demo["root"] / "cache" / "loso_test.npz")
+    X = extract(recs, b.backbone_for("dr"), demo["root"] / "cache" / "loso_test.npz")
     rows = loso(X, recs, "dr", ks=(10, 50), repeats=2)
     strategies = {r["strategy"] for r in rows}
     assert {"source_calibration", "site_recalibration", "site_only_head"} <= strategies
@@ -84,6 +88,7 @@ def test_api_auth_and_health(client):
     assert "screening aid" in info["disclaimer"].lower()
     assert client.get("/").status_code == 200  # web UI
     assert "clinictune_screenings_total" in client.get("/metrics").text
+    assert client.get("/v1/evidence").status_code == 404  # demo bundle ships no evidence
 
 
 def test_api_screen_onboard_report_monitor(client, demo):
@@ -97,6 +102,11 @@ def test_api_screen_onboard_report_monitor(client, demo):
     assert res["calibration"] == "training-sites" and res["note"]["lang"] == "kn"
     assert res["note"]["translation_reviewed"] is False
     assert res["heatmap_png"].startswith("data:image/png;base64,")
+    if res["probability"] is not None:
+        assert res["similar_cases"] and 0 <= res["similar_cases"][0]["label"] <= 1
+        thumb = res["similar_cases"][0]["thumb"].split("/")[-1]
+        assert client.get(f"/v1/library/dr/{thumb}").headers["content-type"] == "image/jpeg"
+    assert client.get("/v1/library/dr/../../manifest.json").status_code == 404
 
     # wrong modality is caught by the gate
     rng = np.random.default_rng(0)
