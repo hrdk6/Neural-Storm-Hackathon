@@ -19,7 +19,15 @@ def contribution_map(head: LinearHead, tokens: np.ndarray, grid: tuple[int, int]
     return head.token_contributions(tokens).reshape(grid)
 
 
-def overlay_png(rgb: np.ndarray, cmap_grid: np.ndarray, max_side: int = 512, alpha: float = 0.45) -> bytes:
+def overlay_png(
+    rgb: np.ndarray,
+    cmap_grid: np.ndarray,
+    max_side: int = 512,
+    alpha: float = 0.45,
+    region: tuple[int, int, int] | None = None,
+) -> bytes:
+    """Heat overlay on the original image. ``region`` = (left, top, side) of the model's square view in
+    original pixels, when the model saw a standardised crop (fundus); the heat is placed exactly there."""
     h, w = rgb.shape[:2]
     scale = max_side / max(h, w)
     size = (max(1, int(w * scale)), max(1, int(h * scale)))
@@ -30,9 +38,16 @@ def overlay_png(rgb: np.ndarray, cmap_grid: np.ndarray, max_side: int = 512, alp
     heat[..., 0] = np.clip(v, 0, 1)  # red: towards refer
     heat[..., 2] = np.clip(-v, 0, 1)  # blue: towards low risk
     heat[..., 3] = np.abs(v) * alpha
-    heat_img = Image.fromarray((heat * 255).astype(np.uint8), "RGBA").resize(size, Image.Resampling.BICUBIC)
+    heat_img = Image.fromarray((heat * 255).astype(np.uint8), "RGBA")
     out = base.convert("RGBA")
-    out.alpha_composite(heat_img)
+    if region is None:
+        out.alpha_composite(heat_img.resize(size, Image.Resampling.BICUBIC))
+    else:
+        left, top, side = region
+        s = max(1, round(side * scale))
+        layer = Image.new("RGBA", size)
+        layer.paste(heat_img.resize((s, s), Image.Resampling.BICUBIC), (round(left * scale), round(top * scale)))
+        out.alpha_composite(layer)
     buf = io.BytesIO()
     out.convert("RGB").save(buf, format="PNG", optimize=True)
     return buf.getvalue()
@@ -60,6 +75,24 @@ def top_regions(grid: np.ndarray, k: int = 3, valid: np.ndarray | None = None) -
         r, c = divmod(int(i), gw)
         out.append({"x": c / gw, "y": r / gh, "w": 1 / gw, "h": 1 / gh, "weight": float(flat[i] / lim)})
     return out
+
+
+def regions_to_original(
+    regions: list[dict[str, float]], region: tuple[int, int, int], shape: tuple[int, ...]
+) -> list[dict[str, float]]:
+    """Map boxes relative to the model's square view back to boxes relative to the original image."""
+    left, top, side = region
+    h, w = shape[:2]
+    return [
+        {
+            **g,
+            "x": (left + g["x"] * side) / w,
+            "y": (top + g["y"] * side) / h,
+            "w": g["w"] * side / w,
+            "h": g["h"] * side / h,
+        }
+        for g in regions
+    ]
 
 
 def to_data_uri(png: bytes) -> str:

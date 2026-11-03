@@ -88,7 +88,8 @@ def run_onboarding(
     backbone = bundle.backbone_for(task)
     embs = []
     for start in range(0, len(kept_rgb), 8):
-        e, _ = backbone.embed(kept_rgb[start : start + 8])
+        batch = [imaging.model_view(tm.preprocess, x)[0] for x in kept_rgb[start : start + 8]]
+        e, _ = backbone.embed(batch)
         embs.append(e)
         done = min(start + 8, len(kept_rgb))
         progress(0.3 + 0.6 * done / max(len(kept_rgb), 1), f"embedding {done}/{len(kept_rgb)}")

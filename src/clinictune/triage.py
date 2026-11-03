@@ -116,9 +116,11 @@ class Screener:
 
         timings: dict[str, float] = {}
         emb = tokens = None
+        model_rgb, view_region = rgb, None
         if gate.passed:
             t1 = time.perf_counter()
-            emb, tokens = backbone.embed([rgb])
+            model_rgb, view_region = imaging.model_view(tm.preprocess, rgb)
+            emb, tokens = backbone.embed([model_rgb])
             timings["backbone_ms"] = round((time.perf_counter() - t1) * 1000, 1)
             if tm.gradability is not None:
                 p_bad = float(tm.gradability.p_ungradable(emb)[0])
@@ -176,8 +178,11 @@ class Screener:
             if cal.residual is not None:
                 contrib = contrib + cal.residual.token_contributions(tm.head, tokens[0])
             grid = contrib.reshape(backbone.spec.grid)
-            result["heatmap_png"] = explain.to_data_uri(explain.overlay_png(rgb, grid))
-            result["regions"] = explain.top_regions(grid, k=3, valid=explain.content_mask(rgb, backbone.spec.grid))
+            result["heatmap_png"] = explain.to_data_uri(explain.overlay_png(rgb, grid, region=view_region))
+            regions = explain.top_regions(grid, k=3, valid=explain.content_mask(model_rgb, backbone.spec.grid))
+            if view_region is not None:
+                regions = explain.regions_to_original(regions, view_region, rgb.shape)
+            result["regions"] = regions
         if similar and tm.library is not None:
             result["similar_cases"] = tm.library.nearest(emb[0], k=similar)
         timings["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
