@@ -25,6 +25,8 @@ dependencies = [
 # One-off: export a real foundation backbone (MedSigLIP / DINOv2) to ONNX. Not needed at serve time.
 export = ["torch>=2.4", "transformers>=4.45", "onnxscript>=0.1"]
 dicom = ["pydicom>=2.4"]
+# Reproducible download of the public datasets (clinictune fetch ...).
+fetch = ["huggingface_hub>=0.24", "pyarrow>=16"]
 
 [project.scripts]
 clinictune = "clinictune.cli:main"
