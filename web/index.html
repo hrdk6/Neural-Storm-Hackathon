@@ -1,0 +1,160 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClinicTune Screening Aid</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">+</span>
+      <div>
+        <strong>ClinicTune</strong>
+        <span class="sub">Screening aid &middot; decision support, not a diagnosis</span>
+      </div>
+    </div>
+    <div class="controls">
+      <label>Site
+        <select id="site-select"><option value="">Not onboarded (training-site settings)</option></select>
+      </label>
+      <label>Note language
+        <select id="lang">
+          <option value="en">English</option>
+          <option value="hi">हिन्दी (draft)</option>
+          <option value="kn">ಕನ್ನಡ (draft)</option>
+        </select>
+      </label>
+      <button id="key-btn" class="ghost" type="button" title="Set API key">Key</button>
+    </div>
+  </header>
+
+  <div id="demo-banner" class="banner warn" hidden>
+    DEMO model trained on synthetic cartoon images. Outputs have no clinical meaning.
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="screen">Screen</button>
+    <button role="tab" aria-selected="false" data-tab="sites">Sites &amp; onboarding</button>
+    <button role="tab" aria-selected="false" data-tab="monitor">Monitoring</button>
+    <button role="tab" aria-selected="false" data-tab="about">About</button>
+  </nav>
+
+  <main>
+    <!-- SCREEN -->
+    <section id="tab-screen" class="tab">
+      <div class="grid2">
+        <form id="screen-form" class="card">
+          <h2>1 &middot; Upload</h2>
+          <div class="seg" role="radiogroup" aria-label="Task">
+            <label><input type="radio" name="task" value="tb" checked> Chest X-ray &middot; TB</label>
+            <label><input type="radio" name="task" value="dr"> Fundus &middot; Diabetic retinopathy</label>
+          </div>
+          <label class="drop" id="drop">
+            <input type="file" id="file" accept="image/*,.dcm" hidden>
+            <img id="preview" alt="" hidden>
+            <span id="drop-text">Drop an image here or <u>choose a file</u><br><small>PNG, JPEG, TIFF or DICOM</small></span>
+          </label>
+          <label class="check"><input type="checkbox" id="heatmap" checked> Show heatmap</label>
+          <button type="submit" id="screen-btn" class="primary" disabled>Screen image</button>
+          <p class="hint">Images are processed in memory and are not stored. Only a fingerprint (hash) and the result are logged.</p>
+        </form>
+
+        <div class="card" id="result-card">
+          <h2>2 &middot; Result</h2>
+          <div id="result-empty" class="empty">Upload an image to see the quality check, triage and explanation.</div>
+          <div id="result" hidden>
+            <div id="decision" class="decision"></div>
+            <p id="note" class="note"></p>
+            <ul id="warnings" class="warnings"></ul>
+            <div class="steps">
+              <div class="step"><h3>Quality gate</h3><ul id="gate" class="checks"></ul></div>
+              <div class="step"><h3>Triage</h3><dl id="triage" class="kv"></dl></div>
+            </div>
+            <figure id="heat-fig" hidden>
+              <img id="heat" alt="Heatmap of image regions that pushed the score up (red) or down (blue)">
+              <figcaption>Red: regions that pushed the score towards <em>refer</em>. Blue: towards <em>low risk</em>.
+                Explains this model's score; it does not outline disease.</figcaption>
+            </figure>
+            <details class="outcome">
+              <summary>Record confirmatory test result (for monitoring)</summary>
+              <div class="row">
+                <button type="button" data-outcome="1" class="ghost">Confirmed positive</button>
+                <button type="button" data-outcome="0" class="ghost">Confirmed negative</button>
+                <span id="outcome-msg" class="hint"></span>
+              </div>
+            </details>
+            <p class="meta" id="meta"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SITES -->
+    <section id="tab-sites" class="tab" hidden>
+      <div class="grid2">
+        <div class="card">
+          <h2>Add a site</h2>
+          <form id="site-form" class="stack">
+            <label>Site ID <input id="site-id" required pattern="[a-z0-9][a-z0-9_\-]{1,63}" placeholder="phc-hosakote"></label>
+            <label>Name <input id="site-name" required placeholder="PHC Hosakote"></label>
+            <button class="primary" type="submit">Create site</button>
+          </form>
+          <h2 class="mt">Onboard a site</h2>
+          <p class="hint">Upload a zip with 50-100 locally labelled images and a <code>labels.csv</code>
+            (<code>filename,label[,patient_id]</code>, label 1 = confirmed positive). ClinicTune measures dataset shift,
+            recalibrates thresholds and the conformal layer, and prints a report card.</p>
+          <form id="onboard-form" class="stack">
+            <label>Site <select id="onboard-site" required></select></label>
+            <label>Task
+              <select id="onboard-task"><option value="tb">Chest X-ray &middot; TB</option><option value="dr">Fundus &middot; DR</option></select>
+            </label>
+            <label>Onboarding pack (.zip) <input type="file" id="onboard-file" accept=".zip" required></label>
+            <button class="primary" type="submit">Start onboarding</button>
+          </form>
+          <div id="job" class="job" hidden>
+            <div class="bar"><span id="job-bar"></span></div>
+            <p id="job-msg" class="hint"></p>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Sites</h2>
+          <div id="sites-list" class="empty">No sites yet.</div>
+        </div>
+      </div>
+      <div class="card" id="report-wrap" hidden>
+        <div class="row between"><h2>Site report card</h2><button id="print-report" class="ghost" type="button">Print</button></div>
+        <iframe id="report-frame" title="Site report card"></iframe>
+      </div>
+    </section>
+
+    <!-- MONITOR -->
+    <section id="tab-monitor" class="tab" hidden>
+      <div class="card">
+        <div class="row">
+          <label>Site <select id="mon-site"></select></label>
+          <label>Task <select id="mon-task"><option value="tb">TB</option><option value="dr">DR</option></select></label>
+          <label>Days <input id="mon-days" type="number" value="30" min="1" max="365"></label>
+          <button id="mon-btn" class="primary" type="button">Refresh</button>
+        </div>
+        <div id="mon" class="tiles"></div>
+        <p class="hint" id="mon-note"></p>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section id="tab-about" class="tab" hidden>
+      <div class="card prose" id="about"></div>
+    </section>
+  </main>
+
+  <dialog id="key-dialog">
+    <form method="dialog" class="stack">
+      <label>API key (stored in this browser only) <input id="key-input" type="password" autocomplete="off"></label>
+      <div class="row"><button value="save" class="primary">Save</button><button value="cancel" class="ghost">Cancel</button></div>
+    </form>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>
