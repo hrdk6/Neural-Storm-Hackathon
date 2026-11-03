@@ -1,0 +1,18 @@
+{
+  "tb": {
+    "backbone": "dinov2-base",
+    "n_images": 3000,
+    "sites": [
+      "montgomery",
+      "shenzhen",
+      "tbx11k"
+    ],
+    "repeats": 10,
+    "ks": [
+      10,
+      50,
+      100
+    ],
+    "alpha": 0.1
+  }
+}
