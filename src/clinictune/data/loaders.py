@@ -32,12 +32,18 @@ def _require(path: Path, what: str) -> Path:
 # --------------------------------------------------------------------------- TB
 
 
-def load_tbx11k(root: str | Path, site: str = "tbx11k") -> list[Record]:
+def load_tbx11k(
+    root: str | Path, site: str = "tbx11k", max_per_negative_class: int | None = None, seed: int = 0
+) -> list[Record]:
     """TBX11K: ``imgs/{health,sick,tb}/*.png`` plus ``lists/TBX11K_{train,val}.txt``.
 
     ``tb`` -> 1; ``health`` and ``sick`` (non-TB disease) -> 0. The unlabeled ``imgs/test`` folder is skipped.
+    ``max_per_negative_class`` keeps every TB image but samples healthy / sick-non-TB images, to bound the
+    CPU cost of embedding extraction; the sampling is recorded in the bundle's training summary.
     """
     root = Path(root)
+    if (root / "TBX11K").is_dir() and not (root / "lists").is_dir():
+        root = root / "TBX11K"
     lists = _require(root / "lists", "TBX11K lists/ folder")
     out: list[Record] = []
     for split in ("train", "val"):
@@ -61,10 +67,40 @@ def load_tbx11k(root: str | Path, site: str = "tbx11k") -> list[Record]:
                     official_split=split,
                 )
             )
+    if max_per_negative_class is not None:
+        import random
+
+        rng = random.Random(seed)
+        keep = [r for r in out if r.label == 1]
+        for cat in ("health", "sick"):
+            pool = [r for r in out if r.label == 0 and Path(r.image_path).parent.name == cat]
+            keep += rng.sample(pool, min(max_per_negative_class, len(pool)))
+        out = sorted(keep, key=lambda r: r.image_path)
     return out
 
 
 _NLM_RE = re.compile(r"^(?P<prefix>CHNCXR|MCUCXR)_(?P<id>\d+)_(?P<label>[01])$", re.IGNORECASE)
+
+
+_SEX_RE = re.compile(r"\b(female|male|F|M)\b", re.IGNORECASE)
+_AGE_RE = re.compile(r"(\d{1,3})\s*(?:y|yr|yrs|years?)\b", re.IGNORECASE)
+_AGE_MONTHS_RE = re.compile(r"(\d{1,2})\s*(?:month|months|m)\b", re.IGNORECASE)
+
+
+def parse_clinical_reading(text: str) -> tuple[str, str]:
+    """NLM ClinicalReadings -> (sex, age). Montgomery: "Patient's Sex: F / Patient's Age: 027Y";
+    Shenzhen: "male 35yrs". Unknown fields come back as ""."""
+    sex = ""
+    m = _SEX_RE.search(text)
+    if m:
+        sex = "F" if m.group(1).lower() in {"female", "f"} else "M"
+    age = ""
+    a = _AGE_RE.search(text)
+    if a:
+        age = str(int(a.group(1)))
+    elif _AGE_MONTHS_RE.search(text):
+        age = "0"
+    return sex, age
 
 
 def _load_nlm(root: Path, dataset: str, site: str) -> list[Record]:
@@ -73,6 +109,10 @@ def _load_nlm(root: Path, dataset: str, site: str) -> list[Record]:
         m = _NLM_RE.match(p.stem)
         if not m or "mask" in str(p.parent).lower():
             continue
+        sex, age = "", ""
+        reading = root / "ClinicalReadings" / f"{p.stem}.txt"
+        if reading.exists():
+            sex, age = parse_clinical_reading(reading.read_text(encoding="utf-8", errors="replace"))
         out.append(
             Record(
                 image_path=str(p.resolve()),
@@ -81,6 +121,8 @@ def _load_nlm(root: Path, dataset: str, site: str) -> list[Record]:
                 site=site,
                 task="tb",
                 dataset=dataset,
+                sex=sex,
+                age=age,
             )
         )
     if not out:
@@ -94,6 +136,15 @@ def load_shenzhen(root: str | Path, site: str = "shenzhen") -> list[Record]:
 
 def load_montgomery(root: str | Path, site: str = "montgomery") -> list[Record]:
     return _load_nlm(Path(root), "montgomery", site)
+
+
+def montgomery_lung_mask(image_path: str | Path) -> Path | None:
+    """Union of the manual left/right lung masks for a Montgomery image, if present."""
+    p = Path(image_path)
+    root = p.parent.parent
+    left = root / "ManualMask" / "leftMask" / p.name
+    right = root / "ManualMask" / "rightMask" / p.name
+    return left if left.exists() and right.exists() else None
 
 
 def load_class_folders(
@@ -205,8 +256,51 @@ def referable_dr(grade: str) -> int | None:
     return int(g >= 2)
 
 
+def load_graded(root: str | Path, *, dataset: str, site: str | None = None) -> list[Record]:
+    """Layout written by ``clinictune fetch``: ``images/`` + ``labels.csv`` with columns
+    ``filename, grade[, gradable], official_split``. Ungradable rows (grade < 0 or gradable == 0) are skipped -
+    they belong to the quality gate, not the disease task."""
+    root = Path(root)
+    out = []
+    with _require(root / "labels.csv", f"{dataset} labels.csv").open(newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            grade = int(row["grade"])
+            if grade < 0 or row.get("gradable", "1") == "0":
+                continue
+            path = root / "images" / row["filename"]
+            out.append(
+                Record(
+                    image_path=str(path.resolve()),
+                    label=int(grade >= 2),
+                    patient_id=f"{dataset}:{Path(row['filename']).stem}",
+                    site=site or dataset,
+                    task="dr",
+                    dataset=dataset,
+                    official_split=row.get("official_split", ""),
+                )
+            )
+    return out
+
+
+def load_gradability(root: str | Path) -> list[tuple[str, int]]:
+    """(image path, ungradable 0/1) pairs from a fetched dataset with a ``gradable`` column (DDR)."""
+    root = Path(root)
+    with (root / "labels.csv").open(newline="", encoding="utf-8") as fh:
+        return [
+            (str((root / "images" / r["filename"]).resolve()), int(r["gradable"] == "0"))
+            for r in csv.DictReader(fh)
+            if "gradable" in r
+        ]
+
+
+def load_ddr(root: str | Path, site: str = "ddr") -> list[Record]:
+    return load_graded(root, dataset="ddr", site=site)
+
+
 def load_aptos(root: str | Path, site: str = "aptos2019") -> list[Record]:
     root = Path(root)
+    if (root / "labels.csv").exists():
+        return load_graded(root, dataset="aptos2019", site=site)
     return load_csv(
         _require(root / "train.csv", "APTOS train.csv"),
         image_root=_require(root / "train_images", "APTOS train_images/"),
@@ -224,6 +318,8 @@ def load_aptos(root: str | Path, site: str = "aptos2019") -> list[Record]:
 def load_idrid(root: str | Path, site: str = "idrid") -> list[Record]:
     """IDRiD 'B. Disease Grading' release; keeps the official train/test tags."""
     root = Path(root)
+    if (root / "labels.csv").exists():
+        return load_graded(root, dataset="idrid", site=site)
     out: list[Record] = []
     for split, needle in (("train", "training labels"), ("test", "testing labels")):
         csvs = [p for p in root.rglob("*.csv") if needle in p.name.lower()]
@@ -273,4 +369,5 @@ LOADERS: dict[str, Callable[..., list[Record]]] = {
     "mendeley_tb": load_mendeley_tb,
     "aptos2019": load_aptos,
     "idrid": load_idrid,
+    "ddr": load_ddr,
 }
