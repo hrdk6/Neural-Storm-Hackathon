@@ -417,6 +417,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Response(path.read_bytes(), media_type="image/jpeg", headers={"cache-control": "max-age=86400"})
 
     web = _web_dir()
+    if web is not None and (web / "icon.svg").exists():
+        icon_bytes = (web / "icon.svg").read_bytes()
+
+        @app.get("/favicon.ico", include_in_schema=False)
+        def favicon() -> Response:  # browsers ask for this path whatever the page declares
+            return Response(icon_bytes, media_type="image/svg+xml", headers={"cache-control": "max-age=86400"})
+
     if web is not None:
         app.mount("/", StaticFiles(directory=web, html=True), name="web")
     return app

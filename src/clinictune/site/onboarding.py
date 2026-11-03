@@ -327,7 +327,10 @@ def _verdict(
     if reasons:
         return "not_ready", reasons
     if not t["point_estimate_meets"]:
-        reasons.append("Point estimates do not meet the screening targets at this site.")
+        for key, name in (("sensitivity", "Sensitivity"), ("specificity", "Specificity")):
+            value, target = m.get(key) or 0.0, t["targets"][key]
+            if value < target:
+                reasons.append(f"{name} {value:.1%} is below the {target:.0%} screening target at this site.")
     cov = after["conformal_coverage"]
     for c in (0, 1):
         v = cov.get(f"class_{c}")
