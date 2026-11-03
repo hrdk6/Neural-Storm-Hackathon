@@ -67,7 +67,7 @@ def run_onboarding(
     progress: Callable[[float, str], None] = lambda p, m: None,
 ) -> tuple[SiteCalibration, dict[str, Any]]:
     tm = bundle.tasks[task]
-    kept_rgb, y, groups = [], [], []
+    kept_rgb, kept_names, y, groups = [], [], [], []
     rejected: list[dict[str, Any]] = []
     for i, (name, data, label, pid) in enumerate(pack):
         try:
@@ -80,17 +80,28 @@ def run_onboarding(
             rejected.append({"file": name, "reasons": [c.name for c in gate.failed]})
             continue
         kept_rgb.append(rgb)
+        kept_names.append(name)
         y.append(label)
         groups.append(pid)
         if i % 10 == 0:
             progress(0.3 * i / len(pack), f"quality gate {i}/{len(pack)}")
+    backbone = bundle.backbone_for(task)
     embs = []
     for start in range(0, len(kept_rgb), 8):
-        e, _ = bundle.backbone.embed(kept_rgb[start : start + 8])
+        e, _ = backbone.embed(kept_rgb[start : start + 8])
         embs.append(e)
-        progress(0.3 + 0.6 * (start + 8) / max(len(kept_rgb), 1), f"embedding {start + 8}/{len(kept_rgb)}")
+        done = min(start + 8, len(kept_rgb))
+        progress(0.3 + 0.6 * done / max(len(kept_rgb), 1), f"embedding {done}/{len(kept_rgb)}")
     if not embs:
         raise PackError("no image passed the quality gate")
+    emb = np.concatenate(embs)
+    y_arr, g_arr = np.array(y), np.array(groups)
+    if tm.gradability is not None:  # learned gate: drop images the quality model calls ungradable
+        ok = tm.gradability.p_ungradable(emb) < tm.gradability.threshold
+        for i in np.flatnonzero(~ok):
+            rejected.append({"file": kept_names[i], "reasons": ["learned_gradability"]})
+        emb, y_arr, g_arr = emb[ok], y_arr[ok], g_arr[ok]
+        kept_rgb = [r for r, keep in zip(kept_rgb, ok, strict=True) if keep]
     gate_summary = {
         "submitted": len(pack),
         "passed": len(kept_rgb),
@@ -98,6 +109,4 @@ def run_onboarding(
         "rejected": rejected[:50],
     }
     progress(0.92, "recalibrating")
-    return onboard_site(
-        tm, site_id, bundle.bundle_id, np.concatenate(embs), np.array(y), np.array(groups), gate_summary=gate_summary
-    )
+    return onboard_site(tm, site_id, bundle.bundle_id, emb, y_arr, g_arr, gate_summary=gate_summary)
