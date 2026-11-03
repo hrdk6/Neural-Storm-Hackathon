@@ -6,6 +6,8 @@ LOSO protocol for each held-out site s:
   * k = 0: source calibration evaluated on the test half (the "before" row - negative results expected);
   * k in {10, 50, 100}: sample k labelled images from the pool, recalibrate (MAP Platt + threshold +
     class-conditional conformal), evaluate on the test half;
+  * k >= 40 with >= 10 per class: a local residual head on top of the source head (ClinicTune's ``adapt``
+    strategy), calibrated on out-of-fold logits - the only strategy that can improve ranking;
   * also: a linear head trained only on the k site labels (threshold-free ROC/PR-AUC), the classic
     "few-shot linear probe" baseline.
 The test half is never used for fitting or model selection.
@@ -26,6 +28,7 @@ from clinictune.data.manifest import Record
 from clinictune.data.splits import patient_split, records_arrays, stratified_label_sample
 from clinictune.embed.backbone import OnnxBackbone
 from clinictune.embed.cache import extract
+from clinictune.model.adapt import select_and_fit
 from clinictune.model.bundle import TaskModel
 from clinictune.model.heads import fit_head
 from clinictune.model.metrics import binary_report
@@ -46,6 +49,51 @@ def _row(site: str, task: str, k: int, strategy: str, rep: int, rep_m: dict, cov
     return row
 
 
+def _age_band(age: str) -> str:
+    if not age:
+        return "unknown"
+    a = int(age)
+    return "<35" if a < 35 else ("35-54" if a < 55 else "55+")
+
+
+def _subgroup_rows(
+    records: Sequence[Record],
+    idx: np.ndarray,
+    y: np.ndarray,
+    p: np.ndarray,
+    thr: float,
+    sets: np.ndarray,
+    meta: dict[str, Any],
+) -> list[dict]:
+    """Per-subgroup sensitivity / specificity / class-conditional coverage on a test set."""
+    groups = {
+        "sex": np.array([records[i].sex or "unknown" for i in idx]),
+        "age": np.array([_age_band(records[i].age) for i in idx]),
+    }
+    covered = sets[np.arange(len(y)), y]
+    out = []
+    for var, g in groups.items():
+        for level in sorted(set(g.tolist())):
+            m = g == level
+            if level == "unknown" or m.sum() < 10:
+                continue
+            pos, neg = m & (y == 1), m & (y == 0)
+            out.append(
+                {
+                    **meta,
+                    "variable": var,
+                    "group": level,
+                    "n": int(m.sum()),
+                    "n_pos": int(pos.sum()),
+                    "sensitivity": float((p[pos] >= thr).mean()) if pos.any() else None,
+                    "specificity": float((p[neg] < thr).mean()) if neg.any() else None,
+                    "coverage_pos": float(covered[pos].mean()) if pos.any() else None,
+                    "coverage_neg": float(covered[neg].mean()) if neg.any() else None,
+                }
+            )
+    return out
+
+
 def loso(
     X: np.ndarray,
     records: Sequence[Record],
@@ -56,12 +104,17 @@ def loso(
     alpha: float = 0.1,
     prior_strength: float = 5.0,
     seed: int = 0,
+    adapt: bool = True,
+    subgroup_rows: list[dict] | None = None,
 ) -> list[dict]:
+    """See module docstring. ``site_adapt`` rows (local residual head, out-of-fold calibration) are added
+    when the k-label sample has >= 10 images of each class; subgroup rows for the largest k are appended to
+    ``subgroup_rows`` when given."""
     y, patients, sites = records_arrays(records)
     rows: list[dict] = []
     for s in sorted(set(sites.tolist())):
         src = np.flatnonzero(sites != s)
-        if len(np.unique(sites[src])) < 1 or len(np.unique(y[src])) < 2:
+        if len(np.unique(y[src])) < 2:
             continue
         tm: TaskModel = train_task(X[src], [records[i] for i in src], task, alpha=alpha, seed=seed)
         tgt = np.flatnonzero(sites == s)
@@ -82,9 +135,8 @@ def loso(
                 )
             )
             rng = np.random.default_rng(seed * 1000 + rep)
-            for k in ks:
-                if k > len(pool):
-                    continue
+            feasible = [k for k in ks if k <= len(pool)]
+            for k in feasible:
                 sel = pool[stratified_label_sample(y[pool], patients[pool], k, rng)]
                 if len(np.unique(y[sel])) < 2:
                     continue
@@ -102,6 +154,34 @@ def loso(
                     )
                     | {"n_images": len(sel)}
                 )
+                if subgroup_rows is not None and k == feasible[-1]:
+                    subgroup_rows += _subgroup_rows(
+                        records,
+                        test,
+                        y[test],
+                        p,
+                        thr,
+                        conf.predict_sets(p),
+                        {"task": task, "held_out_site": s, "k_labels": k, "repeat": rep},
+                    )
+                if adapt and np.bincount(y[sel], minlength=2).min() >= 10:
+                    fit = select_and_fit(tm.head, X[sel], y[sel], patients[sel], seed)
+                    if fit is not None:
+                        residual, oof, _ = fit
+                        a_platt, a_thr, a_conf = _fit_site(tm, oof, y[sel], alpha, 0.0)
+                        pa = a_platt(logit_test + residual.logit(tm.head, X[test]))
+                        rows.append(
+                            _row(
+                                s,
+                                task,
+                                k,
+                                "site_adapt",
+                                rep,
+                                binary_report(y[test], pa, a_thr, n_boot=0),
+                                a_conf.coverage(pa, y[test]),
+                            )
+                            | {"n_images": len(sel), "lambda": residual.lam}
+                        )
                 head, _ = fit_head(X[sel], y[sel], patients[sel], seed=seed)
                 z = head.logit(X[test])
                 rows.append(
@@ -140,6 +220,47 @@ def summarize_rows(rows: list[dict]) -> list[dict]:
                 row[key + "_sd"] = float(np.std(vals))
         out.append(row)
     return out
+
+
+def summarize_subgroups(rows: list[dict]) -> list[dict]:
+    groups: dict[tuple, list[dict]] = {}
+    for r in rows:
+        groups.setdefault((r["task"], r["held_out_site"], r["variable"], r["group"]), []).append(r)
+    out = []
+    for (task, site, var, level), rs in sorted(groups.items()):
+        row: dict[str, Any] = {
+            "task": task,
+            "held_out_site": site,
+            "variable": var,
+            "group": level,
+            "k_labels": rs[0]["k_labels"],
+            "repeats": len(rs),
+            "n_per_repeat": rs[0]["n"],
+        }
+        for key in ("sensitivity", "specificity", "coverage_pos", "coverage_neg"):
+            vals = [r[key] for r in rs if r.get(key) is not None]
+            if vals:
+                row[key] = float(np.mean(vals))
+                row[key + "_sd"] = float(np.std(vals))
+        out.append(row)
+    return out
+
+
+def lungs_removed(mask_path: Path) -> Callable[[np.ndarray], np.ndarray]:
+    """Transform that fills the (manually segmented) lung fields with the mean of the rest of the image."""
+    from PIL import Image
+
+    def fn(rgb: np.ndarray) -> np.ndarray:
+        h, w = rgb.shape[:2]
+        left = np.asarray(Image.open(mask_path).convert("L").resize((w, h)))
+        right_path = mask_path.parent.parent / "rightMask" / mask_path.name
+        right = np.asarray(Image.open(right_path).convert("L").resize((w, h)))
+        lung = (left > 127) | (right > 127)
+        out = rgb.copy()
+        out[lung] = rgb[~lung].mean(axis=0).astype(rgb.dtype)
+        return out
+
+    return fn
 
 
 def write_csv(rows: list[dict], path: str | Path) -> None:
@@ -203,13 +324,14 @@ def shortcut_test(
     tm: TaskModel,
     backbone: OnnxBackbone,
     cache_dir: str | Path,
-    mask_fn: Callable[[Record], Callable[[np.ndarray], np.ndarray]] | None = None,
+    lung_masks: dict[str, Path] | None = None,
 ) -> list[dict]:
     """ROC-AUC of the trained head under image perturbations, per site.
 
     border_only AUC well above 0.5 => the model can predict from the image border (markers, text, collimation).
-    A large drop under center_crop points the same way. ``mask_fn`` (e.g. lung masks for Montgomery) adds a
-    lungs-removed condition.
+    A large drop under center_crop points the same way. ``lung_masks`` (image path -> left-lung mask, e.g.
+    Montgomery's manual masks) adds ``lungs_removed``: if the model still separates TB from normal with both
+    lung fields blanked out, it is reading something other than the lungs.
     """
     y, _, sites = records_arrays(records)
     conds: dict[str, Callable[[np.ndarray], np.ndarray] | None] = {
@@ -236,24 +358,39 @@ def shortcut_test(
                         "n": int(m.sum()),
                     }
                 )
-    if mask_fn is not None:
-        # Per-record transforms can't share one extract() call's transform; extract one by one.
+    if lung_masks:
         from clinictune import imaging
 
-        embs = []
-        for r in records:
-            rgb = mask_fn(r)(imaging.load(r.image_path))
-            embs.append(backbone.embed([rgb])[0][0])
+        idx = [i for i, r in enumerate(records) if r.image_path in lung_masks]
+        embs = [
+            backbone.embed([lungs_removed(lung_masks[records[i].image_path])(imaging.load(records[i].image_path))])[0][
+                0
+            ]
+            for i in idx
+        ]
         z = tm.head.logit(np.stack(embs))
-        for s in sorted(set(sites.tolist())):
-            m = sites == s
-            if len(np.unique(y[m])) == 2:
+        z_orig = tm.head.logit(
+            extract([records[i] for i in idx], backbone, Path(cache_dir) / f"shortcut_{name}_{tm.task}_masked_orig.npz")
+        )
+        ys, ss = y[idx], sites[idx]
+        for s in sorted(set(ss.tolist())):
+            m = ss == s
+            if len(np.unique(ys[m])) == 2:
                 rows.append(
                     {
                         "task": tm.task,
                         "site": s,
-                        "condition": "lungs_masked",
-                        "roc_auc": float(roc_auc_score(y[m], z[m])),
+                        "condition": "original_masked_subset",
+                        "roc_auc": float(roc_auc_score(ys[m], z_orig[m])),
+                        "n": int(m.sum()),
+                    }
+                )
+                rows.append(
+                    {
+                        "task": tm.task,
+                        "site": s,
+                        "condition": "lungs_removed",
+                        "roc_auc": float(roc_auc_score(ys[m], z[m])),
                         "n": int(m.sum()),
                     }
                 )
