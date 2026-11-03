@@ -18,7 +18,7 @@ from PIL import Image
 from clinictune import imaging, synthetic
 from clinictune.data.manifest import Record, read_manifest, summarize, write_manifest
 from clinictune.data.splits import patient_split
-from clinictune.embed.backbone import BackboneSpec, OnnxBackbone
+from clinictune.embed.backbone import BackboneSpec, OnnxBackbone, sha256_file
 from clinictune.embed.cache import extract
 from clinictune.embed.demo_backbone import build_demo_backbone
 from clinictune.model.bundle import CaseLibrary, GradabilityHead, backbone_dir, save_bundle
@@ -140,8 +140,10 @@ def train_bundle(
         if name not in specs:
             dest = backbone_dir(bundle_dir, name)
             dest.mkdir(parents=True, exist_ok=True)
-            for f in Path(backbone_dirs[task]).glob("backbone.onnx*"):
-                shutil.copy2(f, dest / f.name)
+            # Skip identical weights: re-training a bundle must not rewrite (possibly memory-mapped) files.
+            if not ((dest / "backbone.onnx").exists() and sha256_file(dest / "backbone.onnx") == backbone.spec.sha256):
+                for f in Path(backbone_dirs[task]).glob("backbone.onnx*"):
+                    shutil.copy2(f, dest / f.name)
             specs[name] = backbone.spec
         recs = [r for r in records if r.task == task and r.site not in exclude]
         if not recs:
