@@ -153,7 +153,7 @@ def train_bundle(
         if gradability and task in gradability:
             log.info("task %s: training gradability gate on %d images", task, len(gradability[task]))
             tm.gradability = train_gradability(
-                gradability[task], backbone, Path(cache_dir) / f"{_safe(name)}_{task}_quality.npz", seed=seed
+                gradability[task], backbone, Path(cache_dir) / f"{_safe(name)}_{task}_all.npz", seed=seed
             )
         task_models[task] = tm
     datasets = sorted({r.dataset for r in records if r.site not in exclude and r.task in tasks})
