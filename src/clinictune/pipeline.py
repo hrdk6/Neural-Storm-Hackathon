@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 import shutil
@@ -218,7 +219,7 @@ def build_demo(root: str | Path = ".", n_scale: float = 1.0, seed: int = 0) -> d
 def make_onboarding_zip(records: Sequence[Record], out: str | Path, max_side: int | None = None) -> Path:
     """Onboarding pack format: images + labels.csv (filename,label[,patient_id,sex,age]).
 
-    ``max_side`` downsizes images (as PNG) to keep packs uploadable from a clinic connection.
+    ``max_side`` downsizes images (to high-quality JPEG) to keep packs uploadable from a clinic connection.
     """
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -229,11 +230,9 @@ def make_onboarding_zip(records: Sequence[Record], out: str | Path, max_side: in
             if max_side:
                 img = Image.fromarray(imaging.load(r.image_path))
                 img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
-                name = Path(name).with_suffix(".png").name
-                import io
-
+                name = Path(name).with_suffix(".jpg").name
                 buf = io.BytesIO()
-                img.save(buf, format="PNG", optimize=True)
+                img.convert("RGB").save(buf, format="JPEG", quality=92, optimize=True)
                 zf.writestr(f"images/{name}", buf.getvalue())
             else:
                 zf.write(r.image_path, f"images/{name}")

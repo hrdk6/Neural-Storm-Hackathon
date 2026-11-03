@@ -295,8 +295,8 @@ def _choose(strategies: dict[str, dict[str, Any]]) -> tuple[str, str]:
             f"(needs >= +{ADAPT_MARGIN:.2f}); it is deployed with calibration fitted on out-of-fold scores."
         )
     return "recalibrate", (
-        f"Recalibration kept: a local adaptation layer reached ROC-AUC {aa:.3f} vs {ra:.3f}, below the +{ADAPT_MARGIN:.2f} "
-        "margin needed to justify a site-specific model."
+        f"Recalibration kept: a local adaptation layer reached ROC-AUC {aa:.3f} vs {ra:.3f}, "
+        f"below the +{ADAPT_MARGIN:.2f} margin needed to justify a site-specific model."
     )
 
 
