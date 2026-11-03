@@ -211,12 +211,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "version": __version__,
                 "bundle_id": b.bundle_id,
                 "demo": b.is_demo,
-                "backbone": b.backbone.spec.name,
+                "backbones": {name: bb.spec.to_dict() for name, bb in b.backbones.items()},
                 "tasks": {
                     k: {
                         **v,
                         "target_sensitivity": b.tasks[k].target_sensitivity,
                         "internal_metrics": b.tasks[k].metrics.get("overall"),
+                        "training": {kk: b.tasks[k].training.get(kk) for kk in ("sites", "datasets", "n")},
+                        "gradability": b.tasks[k].gradability.metrics if b.tasks[k].gradability else None,
+                        "similar_cases": b.tasks[k].library is not None,
                     }
                     for k, v in b.manifest["tasks"].items()
                 },
@@ -362,6 +365,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def monitoring(site_id: str, task: str, days: Annotated[int, Query(ge=1, le=365)] = 30) -> dict[str, Any]:
         check_site(site_id)
         return store().monitoring(site_id, task, days)
+
+    @app.get("/v1/evidence", dependencies=v1)
+    def evidence() -> dict[str, Any]:
+        """Validation evidence shipped with the bundle (LOSO, shortcut, subgroup, backbone benchmarks)."""
+        ev = screener().bundle.evidence()
+        if ev is None:
+            raise HTTPException(404, "this bundle has no evidence.json - run `clinictune evidence`")
+        return jsonable(ev)
+
+    @app.get("/v1/library/{task}/{name}", include_in_schema=False)
+    def library_thumb(task: str, name: str) -> Response:
+        """Reference-case thumbnails for similar-case retrieval (served from the read-only bundle)."""
+        if not re.fullmatch(r"\d{4}\.jpg", name) or task not in screener().bundle.tasks:
+            raise HTTPException(404, "not found")
+        path = screener().bundle.root / "library" / task / name
+        if not path.exists():
+            raise HTTPException(404, "not found")
+        return Response(path.read_bytes(), media_type="image/jpeg", headers={"cache-control": "max-age=86400"})
 
     web = _web_dir()
     if web is not None:
