@@ -1,0 +1,4 @@
+{"backbone": "rad-dino", "ms_per_image_median": 1169.7652000002563, "ms_per_image_p90": 1270.445470046252, "batch_size": 1}
+{"backbone": "rad-dino@392", "ms_per_image_median": 512.9331000498496, "ms_per_image_p90": 593.8379999715835, "batch_size": 1}
+{"backbone": "dinov2-base", "ms_per_image_median": 92.75115001946688, "ms_per_image_p90": 102.99590994836763, "batch_size": 1}
+{"backbone": "dinov2-small", "ms_per_image_median": 33.74164999695495, "ms_per_image_p90": 38.584070012439064, "batch_size": 1}
