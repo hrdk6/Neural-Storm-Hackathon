@@ -1,0 +1,12 @@
+task,site,condition,roc_auc,n
+tb,montgomery,original,0.7077586206896551,138
+tb,shenzhen,original,0.9869754623044097,300
+tb,tbx11k,original,0.9989432729718046,300
+tb,montgomery,border_only,0.5202586206896551,138
+tb,shenzhen,border_only,0.3917585348506401,300
+tb,tbx11k,border_only,0.6254863345982036,300
+tb,montgomery,center_crop_80,0.801293103448276,138
+tb,shenzhen,center_crop_80,0.9692834281650071,300
+tb,tbx11k,center_crop_80,0.9886642009702675,300
+tb,montgomery,original_masked_subset,0.7077586206896551,138
+tb,montgomery,lungs_removed,0.4952586206896552,138
