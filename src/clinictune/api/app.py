@@ -155,6 +155,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["x-request-id"] = rid
         response.headers["x-content-type-options"] = "nosniff"
         response.headers["referrer-policy"] = "no-referrer"
+        response.headers["x-frame-options"] = "DENY"
+        if not request.url.path.startswith("/v1") or request.url.path.endswith(".html"):
+            # The UI only runs its own scripts and only talks to this server. Inline styles are allowed for the
+            # srcdoc report card and positioning; no inline or third-party scripts anywhere.
+            response.headers.setdefault(
+                "content-security-policy",
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                "font-src 'self'; connect-src 'self'; worker-src 'self'; frame-src 'self'; object-src 'none'; "
+                "base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+            )
         # UI assets revalidate on every load (ETag) so an upgrade never runs stale JS; API results are never cached.
         response.headers.setdefault(
             "cache-control", "no-cache" if not request.url.path.startswith("/v1") else "no-store"
@@ -376,6 +386,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def monitoring(site_id: str, task: str, days: Annotated[int, Query(ge=1, le=365)] = 30) -> dict[str, Any]:
         check_site(site_id)
         return store().monitoring(site_id, task, days)
+
+    @app.get("/v1/sites/{site_id}/screenings.csv", dependencies=v1)
+    def screenings_csv(site_id: str, days: Annotated[int, Query(ge=1, le=3650)] = 90) -> Response:
+        """Screening log for district reporting: decisions, outcomes and versions - no images, no patient data."""
+        check_site(site_id)
+        body = store().export_csv(site_id, days)
+        return Response(
+            body,
+            media_type="text/csv",
+            headers={"content-disposition": f'attachment; filename="{site_id}-screenings.csv"'},
+        )
 
     @app.get("/v1/evidence", dependencies=v1)
     def evidence() -> dict[str, Any]:

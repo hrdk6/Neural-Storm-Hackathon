@@ -256,6 +256,38 @@ class Store:
             cur = c.execute("UPDATE screenings SET outcome = ? WHERE request_id = ?", (outcome, request_id))
         return cur.rowcount == 1
 
+    def export_csv(self, site_id: str, days: int = 90) -> str:
+        """Screening log as CSV (no images, no patient identifiers - only what the audit log holds)."""
+        import csv
+        import io
+
+        since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+        cols = [
+            "request_id",
+            "ts",
+            "task",
+            "decision",
+            "reason",
+            "probability",
+            "gate_passed",
+            "ood_flagged",
+            "outcome",
+            "calibration",
+            "bundle_id",
+            "latency_ms",
+            "image_sha256",
+        ]
+        with self._conn() as c:
+            rows = c.execute(
+                f"SELECT {', '.join(cols)} FROM screenings WHERE site_id = ? AND ts >= ? ORDER BY ts",  # noqa: S608
+                (site_id, since),
+            ).fetchall()
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(cols)
+        w.writerows([tuple(r) for r in rows])
+        return buf.getvalue()
+
     def monitoring(self, site_id: str, task: str, days: int = 30) -> dict[str, Any]:
         since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
         with self._conn() as c:
@@ -263,7 +295,7 @@ class Store:
                 dict(r)
                 for r in c.execute(
                     "SELECT ts, decision, gate_passed, ood_flagged, outcome, probability, latency_ms, calibration "
-                    "FROM screenings WHERE site_id = ? AND task = ? AND ts >= ? ORDER BY ts",
+                    "FROM screenings WHERE site_id = ? AND task = ? AND ts >= ? ORDER BY ts",  # noqa: S608
                     (site_id, task, since),
                 )
             ]

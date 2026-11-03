@@ -34,3 +34,12 @@ def test_monitoring_alerts_and_daily(tmp_path):
 def test_two_proportion_test():
     assert _two_prop_p(50, 100, 50, 100) > 0.9
     assert _two_prop_p(80, 100, 20, 100) < 1e-6
+
+
+def test_export_csv_has_no_images(tmp_path):
+    st = Store(tmp_path / "db.sqlite3")
+    st.create_site("a", "A")
+    st.log_screening("r1", "a", _result("refer", ood=False))
+    lines = st.export_csv("a").splitlines()
+    assert lines[0].startswith("request_id,ts,task,decision") and len(lines) == 2
+    assert "heatmap" not in lines[0]
