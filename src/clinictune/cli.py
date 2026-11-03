@@ -250,7 +250,7 @@ def cmd_evidence(a: argparse.Namespace) -> None:
     for p in map(Path, a.shortcut):
         ev["shortcut"][p.stem.split("_")[-1]] = rows(p)
     for p in map(Path, a.benchmark):
-        ev["backbones"] += [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+        ev["backbones"] += [json.loads(line) for line in p.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
     if a.manifest:
         from clinictune.data.manifest import read_manifest, summarize
 
