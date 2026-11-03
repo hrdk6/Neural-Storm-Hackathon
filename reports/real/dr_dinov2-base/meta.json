@@ -1,0 +1,18 @@
+{
+  "dr": {
+    "backbone": "dinov2-base",
+    "n_images": 6278,
+    "sites": [
+      "aptos2019",
+      "ddr",
+      "idrid"
+    ],
+    "repeats": 10,
+    "ks": [
+      10,
+      50,
+      100
+    ],
+    "alpha": 0.1
+  }
+}
