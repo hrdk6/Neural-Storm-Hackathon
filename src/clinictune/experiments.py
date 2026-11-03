@@ -341,7 +341,9 @@ def background_only(rgb: np.ndarray) -> np.ndarray:
     fov = binary_fill_holes(gray > 20)
     fov = binary_dilation(fov, iterations=max(2, min(rgb.shape[:2]) // 100))
     out = rgb.copy()
-    out[fov] = np.median(rgb[fov], axis=0).astype(rgb.dtype) if fov.any() else out[fov]
+    # A constant fill: filling with the retina's own median colour would leak its overall colour and
+    # brightness, which change with disease (haemorrhages darken, exudates brighten) - not a fair null.
+    out[fov] = np.array([110, 60, 30], dtype=rgb.dtype)
     return out
 
 
