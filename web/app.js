@@ -439,7 +439,8 @@ function similarSection(r) {
     el("h3", { text: "Most similar reference cases" }),
     el("p", { class: "similar-sum", text: `${pos} of the ${cases.length} closest confirmed cases from the training hospitals were ${t.positive === "TB" ? "TB" : "referable"}.` }),
     el("div", { class: "similar-grid" }, cases.map((c) => el("figure", { class: "case" },
-      el("img", { src: `/v1/${c.thumb}`, alt: `${c.label ? t.positive : t.negative} reference case from ${c.dataset}`, loading: "lazy" }),
+      // The bundle id is part of the URL so a model upgrade never shows another bundle's cached thumbnail.
+      el("img", { src: `/v1/${c.thumb}?bundle=${encodeURIComponent(r.model.bundle_id)}`, alt: `${c.label ? t.positive : t.negative} reference case from ${c.dataset}`, loading: "lazy" }),
       el("figcaption", {},
         el("span", { class: `tag ${c.label ? "pos" : "neg"}`, text: c.label ? t.positive : t.negative }),
         el("span", { text: c.dataset }))))),
