@@ -38,5 +38,19 @@ def overlay_png(rgb: np.ndarray, cmap_grid: np.ndarray, max_side: int = 512, alp
     return buf.getvalue()
 
 
+def top_regions(grid: np.ndarray, k: int = 3) -> list[dict[str, float]]:
+    """The k patches pushing hardest towards 'refer', as relative boxes (x, y, w, h in 0..1) for the UI."""
+    gh, gw = grid.shape
+    flat = grid.ravel()
+    lim = float(np.abs(flat).max()) or 1.0
+    out = []
+    for i in np.argsort(-flat)[:k]:
+        if flat[i] <= 0:
+            break
+        r, c = divmod(int(i), gw)
+        out.append({"x": c / gw, "y": r / gh, "w": 1 / gw, "h": 1 / gh, "weight": float(flat[i] / lim)})
+    return out
+
+
 def to_data_uri(png: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(png).decode()
