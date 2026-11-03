@@ -319,6 +319,20 @@ def center_crop(rgb: np.ndarray, frac: float = 0.8) -> np.ndarray:
     return rgb[dh : h - dh, dw : w - dw]
 
 
+def background_only(rgb: np.ndarray) -> np.ndarray:
+    """Fundus version of the border test: blank the whole circular retinal field and keep only the background,
+    where camera overlays, text and site-specific vignetting live. (A plain border strip is not enough for
+    fundus photos - the retina often reaches the image edge.)"""
+    from scipy.ndimage import binary_dilation, binary_fill_holes
+
+    gray = rgb.astype(np.float32).mean(axis=2)
+    fov = binary_fill_holes(gray > 20)
+    fov = binary_dilation(fov, iterations=max(2, min(rgb.shape[:2]) // 100))
+    out = rgb.copy()
+    out[fov] = np.median(rgb[fov], axis=0).astype(rgb.dtype) if fov.any() else out[fov]
+    return out
+
+
 def shortcut_test(
     records: Sequence[Record],
     tm: TaskModel,
@@ -352,7 +366,7 @@ def shortcut_test(
     y, _, sites = records_arrays(records)
     conds: dict[str, Callable[[np.ndarray], np.ndarray] | None] = {
         "original": None,
-        "border_only": border_only,
+        ("background_only" if tm.task == "dr" else "border_only"): background_only if tm.task == "dr" else border_only,
         "center_crop_80": center_crop,
     }
     rows = []

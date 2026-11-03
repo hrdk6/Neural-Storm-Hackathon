@@ -200,8 +200,8 @@ def cmd_shortcut(a: argparse.Namespace) -> None:
     write_csv(rows, Path(a.out) / f"shortcut_{a.task}.csv")
     for r in rows:
         warn = (
-            "  <-- border alone is predictive: possible shortcut"
-            if (r["condition"] == "border_only" and r["roc_auc"] > 0.65)
+            "  <-- predictive without the anatomy: possible shortcut"
+            if (r["condition"] in {"border_only", "background_only", "lungs_removed"} and r["roc_auc"] > 0.65)
             else ""
         )
         print(f"{r['site']:16} {r['condition']:24} ROC-AUC {r['roc_auc']:.3f} (n={r['n']}){warn}")
@@ -380,12 +380,13 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--out", default="reports")
     s.set_defaults(fn=cmd_loso)
 
-    s = sub.add_parser("shortcut", help="border-only / center-crop shortcut tests")
+    s = sub.add_parser("shortcut", help="border-only / center-crop / lungs-removed shortcut tests")
     s.add_argument("--manifest", required=True)
     s.add_argument("--bundle-dir", required=True)
     s.add_argument("--task", default="tb", choices=["tb", "dr"])
     s.add_argument("--cache-dir", default="cache")
     s.add_argument("--out", default="reports")
+    s.add_argument("--max-per-site", type=int, default=300, help="images sampled per hospital (0 = all)")
     s.set_defaults(fn=cmd_shortcut)
 
     s = sub.add_parser("pack", help="make an onboarding pack from one site of a manifest")

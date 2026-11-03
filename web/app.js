@@ -1093,7 +1093,8 @@ function backboneSection(ev, task) {
 function shortcutSection(ev, task) {
   const rows = ev.shortcut?.[task];
   if (!rows || !rows.length) return null;
-  const conds = [["original", "Whole image", "--series-1"], ["border_only", "Border only, centre blanked", "--series-2"], ["lungs_removed", "Lungs blanked out", "--series-3"]];
+  const conds = [["original", "Whole image", "--series-1"], ["border_only", "Border only, centre blanked", "--series-2"],
+    ["background_only", "Background only, retina blanked", "--series-2"], ["lungs_removed", "Lungs blanked out", "--series-3"]];
   const sites = [...new Set(rows.map((r) => r.site))];
   const W = 640, rowH = 30, L = 210, R = 16, T = 24, H = T + sites.length * rowH + 24;
   const x = (v) => L + (W - L - R) * ((v - 0.3) / 0.7);
@@ -1120,7 +1121,9 @@ function shortcutSection(ev, task) {
   const present = conds.filter(([c]) => rows.some((r) => r.condition === c));
   return el("section", { class: "v-section" },
     el("h2", { text: "Is it reading the lungs, or the hospital's markings?" }),
-    el("p", { text: "Models can learn shortcuts such as hospital text, markers or collimation. Here the trained model scores images with the centre blanked out (only the border left) and, for Montgomery, with both lung fields blanked using the manual lung masks. A score near chance means the shortcut is not available to it." }),
+    el("p", { text: task === "tb"
+      ? "Models can learn shortcuts such as hospital text, markers or collimation. Here the trained model scores chest X-rays with the centre blanked out, so only a border strip is left, and, for Montgomery, with both lung fields blanked using the manual lung masks. A score near chance means the model cannot do its job without the anatomy."
+      : "Models can learn shortcuts such as camera overlays, text or a site's vignetting. Here the trained model scores fundus photos with the whole retina blanked out, so only the background around it is left. A score near chance means the model cannot do its job without the retina." }),
     legend(present.map(([, label, color]) => ({ label, color: cssVar(color) }))),
     el("figure", { class: "chart", style: "margin-top:10px" }, svg),
     tableView(["Hospital", "Condition", "ROC-AUC", "Images"], rows.map((r) => [siteLabel(r.site), r.condition.replace(/_/g, " "), num(r.roc_auc, 3), r.n])),
