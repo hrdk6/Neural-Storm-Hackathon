@@ -262,13 +262,13 @@ class Store:
             rows = [
                 dict(r)
                 for r in c.execute(
-                    "SELECT decision, gate_passed, ood_flagged, outcome, probability, latency_ms, calibration "
-                    "FROM screenings WHERE site_id = ? AND task = ? AND ts >= ?",
+                    "SELECT ts, decision, gate_passed, ood_flagged, outcome, probability, latency_ms, calibration "
+                    "FROM screenings WHERE site_id = ? AND task = ? AND ts >= ? ORDER BY ts",
                     (site_id, task, since),
                 )
             ]
         n = len(rows)
-        out: dict[str, Any] = {"site_id": site_id, "task": task, "days": days, "n": n}
+        out: dict[str, Any] = {"site_id": site_id, "task": task, "days": days, "n": n, "alerts": [], "daily": []}
         if not n:
             return out
         dec = [r["decision"] for r in rows]
@@ -287,8 +287,90 @@ class Store:
             out["missed_positives_low_risk"] = sum(r["decision"] == "low_risk" for r in pos)
         if neg:
             out["observed_specificity"] = sum(r["decision"] == "low_risk" for r in neg) / len(neg)
+        out["daily"] = _daily(rows)
+        out["alerts"] = _alerts(rows, out)
         out["note"] = (
             "Outcomes are only recorded for patients whose confirmatory test result was entered; "
             "observed rates are biased if confirmation is not done for every patient."
         )
         return out
+
+
+def _daily(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    days: dict[str, dict[str, int]] = {}
+    for r in rows:
+        d = days.setdefault(r["ts"][:10], {"n": 0, "refer": 0, "low_risk": 0, "uncertain": 0, "ood": 0, "gate_fail": 0})
+        d["n"] += 1
+        d[r["decision"]] = d.get(r["decision"], 0) + 1
+        d["ood"] += int(r["ood_flagged"] or 0)
+        d["gate_fail"] += 1 - r["gate_passed"]
+    return [{"date": k, **v} for k, v in sorted(days.items())]
+
+
+def _two_prop_p(k1: int, n1: int, k2: int, n2: int) -> float:
+    """Two-sided p-value of a two-proportion z-test."""
+    from math import erf, sqrt
+
+    p = (k1 + k2) / (n1 + n2)
+    se = sqrt(p * (1 - p) * (1 / n1 + 1 / n2))
+    if se == 0:
+        return 1.0
+    z = abs(k1 / n1 - k2 / n2) / se
+    return 2 * (1 - 0.5 * (1 + erf(z / sqrt(2))))
+
+
+def _alerts(rows: list[dict[str, Any]], summary: dict[str, Any]) -> list[dict[str, str]]:
+    """Plain rules a clinic lead can act on. Thresholds are deliberately simple and documented."""
+    alerts = []
+    n = len(rows)
+    if n >= 20 and (summary.get("ood_rate") or 0) > 0.10:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "unfamiliar_images",
+                "message": f"{summary['ood_rate']:.0%} of images look unlike the data this site was "
+                "calibrated on. Has the X-ray machine, camera or protocol changed? Re-onboard.",
+            }
+        )
+    if n >= 20 and summary["gate_fail_rate"] > 0.20:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "image_quality",
+                "message": f"{summary['gate_fail_rate']:.0%} of images fail the quality gate. Check focus, "
+                "exposure and positioning, or camera hardware.",
+            }
+        )
+    if n >= 20 and summary["decision_rates"]["uncertain"] > 0.40:
+        alerts.append(
+            {
+                "level": "info",
+                "code": "many_uncertain",
+                "message": f"{summary['decision_rates']['uncertain']:.0%} of results are Uncertain. More local "
+                "labels at the next onboarding will make the model more decisive.",
+            }
+        )
+    recent = [r for r in rows if r["ts"] >= (datetime.now(UTC) - timedelta(days=7)).isoformat(timespec="seconds")]
+    base = [r for r in rows if r not in recent]
+    if len(recent) >= 30 and len(base) >= 30:
+        k1, k2 = sum(r["decision"] == "refer" for r in recent), sum(r["decision"] == "refer" for r in base)
+        p = _two_prop_p(k1, len(recent), k2, len(base))
+        if p < 0.01:
+            alerts.append(
+                {
+                    "level": "warning",
+                    "code": "referral_rate_shift",
+                    "message": f"Referral rate changed from {k2 / len(base):.0%} to {k1 / len(recent):.0%} in "
+                    f"the last 7 days (p={p:.3f}). Check for a change in patient mix or equipment.",
+                }
+            )
+    if summary.get("missed_positives_low_risk"):
+        alerts.append(
+            {
+                "level": "critical",
+                "code": "missed_positive",
+                "message": f"{summary['missed_positives_low_risk']} confirmed-positive patient(s) were called Low "
+                "risk. Review these cases and consider re-onboarding.",
+            }
+        )
+    return alerts
