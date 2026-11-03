@@ -124,6 +124,7 @@ def cmd_train(a: argparse.Namespace) -> None:
 
 
 def cmd_loso(a: argparse.Namespace) -> None:
+    from clinictune import imaging
     from clinictune.data.manifest import read_manifest
     from clinictune.embed.cache import extract
     from clinictune.experiments import loso, markdown_table, summarize_rows, summarize_subgroups, write_csv
@@ -141,7 +142,10 @@ def cmd_loso(a: argparse.Namespace) -> None:
     for task in a.tasks:
         bb = load_backbone_dir(backbones[task])
         recs = [r for r in read_manifest(a.manifest) if r.task == task]
-        X = extract(recs, bb, Path(a.cache_dir) / f"{bb.spec.name.replace('@', '-')}_{task}_all.npz")
+        pre = imaging.PREPROCESS.get(task, "")  # same model view as training and serving
+        tag = f"_{imaging.view_tag(pre)}" if pre else ""
+        cache = Path(a.cache_dir) / f"{bb.spec.name.replace('@', '-')}_{task}{tag}_all.npz"
+        X = extract(recs, bb, cache, transform=imaging.view_transform(pre))
         sub: list[dict] = []
         rows = loso(
             X,
@@ -166,6 +170,7 @@ def cmd_loso(a: argparse.Namespace) -> None:
             "repeats": a.repeats,
             "ks": a.ks,
             "alpha": a.alpha,
+            "preprocess": pre,
         }
         md += [f"\n## {task.upper()} ({bb.spec.name}, {len(recs)} images)\n", markdown_table(summary, a.alpha), ""]
     (out / "loso.md").write_text("\n".join(md), encoding="utf-8")
@@ -174,6 +179,7 @@ def cmd_loso(a: argparse.Namespace) -> None:
 
 
 def cmd_shortcut(a: argparse.Namespace) -> None:
+    from clinictune import imaging
     from clinictune.data.loaders import montgomery_lung_mask
     from clinictune.data.manifest import read_manifest
     from clinictune.experiments import shortcut_test, write_csv
@@ -187,7 +193,9 @@ def cmd_shortcut(a: argparse.Namespace) -> None:
             if r.dataset == "montgomery" and (m := montgomery_lung_mask(r.image_path)) is not None:
                 masks[r.image_path] = m
     bb = b.backbone_for(a.task)
-    original = Path(a.cache_dir) / f"{bb.spec.name.replace('@', '-')}_{a.task}_all.npz"  # shared with loso/train
+    pre = b.tasks[a.task].preprocess
+    suffix = f"_{imaging.view_tag(pre)}" if pre else ""
+    original = Path(a.cache_dir) / f"{bb.spec.name.replace('@', '-')}_{a.task}{suffix}_all.npz"  # shared with loso
     rows = shortcut_test(
         recs,
         b.tasks[a.task],
@@ -196,6 +204,7 @@ def cmd_shortcut(a: argparse.Namespace) -> None:
         lung_masks=masks or None,
         max_per_site=a.max_per_site,
         original_cache=original,
+        view=imaging.view_transform(pre),
     )
     write_csv(rows, Path(a.out) / f"shortcut_{a.task}.csv")
     for r in rows:

@@ -319,12 +319,24 @@ def center_crop(rgb: np.ndarray, frac: float = 0.8) -> np.ndarray:
     return rgb[dh : h - dh, dw : w - dw]
 
 
+def _compose(first: Callable[[np.ndarray], np.ndarray], then: Callable[[np.ndarray], np.ndarray]):  # type: ignore[no-untyped-def]
+    def fn(rgb: np.ndarray) -> np.ndarray:
+        return then(first(rgb))
+
+    return fn
+
+
 def background_only(rgb: np.ndarray) -> np.ndarray:
     """Fundus version of the border test: blank the whole circular retinal field and keep only the background,
     where camera overlays, text and site-specific vignetting live. (A plain border strip is not enough for
     fundus photos - the retina often reaches the image edge.)"""
+    from PIL import Image
     from scipy.ndimage import binary_dilation, binary_fill_holes
 
+    # The backbone sees <= 518 px; masking a 12-megapixel original first would only cost time.
+    img = Image.fromarray(rgb)
+    img.thumbnail((512, 512), Image.Resampling.BILINEAR)
+    rgb = np.asarray(img)
     gray = rgb.astype(np.float32).mean(axis=2)
     fov = binary_fill_holes(gray > 20)
     fov = binary_dilation(fov, iterations=max(2, min(rgb.shape[:2]) // 100))
@@ -342,6 +354,7 @@ def shortcut_test(
     max_per_site: int | None = 300,
     original_cache: str | Path | None = None,
     seed: int = 0,
+    view: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> list[dict]:
     """ROC-AUC of the trained head under image perturbations, per site.
 
@@ -374,9 +387,13 @@ def shortcut_test(
     for cond, fn in conds.items():
         # Key the cache on the transform's bytecode so editing a transform never reuses stale embeddings.
         tag = hashlib.sha256(fn.__code__.co_code).hexdigest()[:8] if fn else "none"
+        is_original = fn is None
+        if view is not None:  # perturb the original, then apply the model view the deployed model uses
+            tag += "_" + view.__name__
+            fn = _compose(fn, view) if fn else view
         path = (
             Path(original_cache)
-            if (fn is None and original_cache)
+            if (is_original and original_cache)
             else (Path(cache_dir) / f"shortcut_{name.replace('@', '-')}_{tm.task}_{cond}_{tag}.npz")
         )
         X = extract(records, backbone, path, transform=fn)
