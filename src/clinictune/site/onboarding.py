@@ -285,17 +285,17 @@ def onboard_site(
 def _choose(strategies: dict[str, dict[str, Any]]) -> tuple[str, str]:
     r, a = strategies["recalibrate"], strategies["adapt"]
     if not a.get("available"):
-        return "recalibrate", f"Local head not tried: {a.get('reason')}."
+        return "recalibrate", f"Local adaptation not tried: {a.get('reason')}."
     if not r.get("available"):
         return "adapt", "Recalibration could not be evaluated."
     ra, aa = r["metrics"].get("roc_auc") or 0, a["metrics"].get("roc_auc") or 0
     if aa >= ra + ADAPT_MARGIN:
         return "adapt", (
-            f"A local residual head raised cross-fitted ROC-AUC from {ra:.3f} to {aa:.3f} "
+            f"A local adaptation layer raised cross-fitted ROC-AUC from {ra:.3f} to {aa:.3f} "
             f"(needs >= +{ADAPT_MARGIN:.2f}); it is deployed with calibration fitted on out-of-fold scores."
         )
     return "recalibrate", (
-        f"Recalibration kept: a local head reached ROC-AUC {aa:.3f} vs {ra:.3f}, below the +{ADAPT_MARGIN:.2f} "
+        f"Recalibration kept: a local adaptation layer reached ROC-AUC {aa:.3f} vs {ra:.3f}, below the +{ADAPT_MARGIN:.2f} "
         "margin needed to justify a site-specific model."
     )
 
