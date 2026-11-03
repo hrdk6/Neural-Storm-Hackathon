@@ -1181,6 +1181,7 @@ async function init() {
   }
 }
 showTab(location.hash.slice(1) || "screen", { push: false });
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1), { push: false }));
 init();
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
