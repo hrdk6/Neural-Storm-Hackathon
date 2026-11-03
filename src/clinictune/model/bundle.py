@@ -90,6 +90,7 @@ class TaskModel:
     ood: OODDetector
     reference: np.ndarray
     backbone: str = ""
+    preprocess: str = ""  # model view applied before the backbone (see imaging.model_view)
     gradability: GradabilityHead | None = None
     library: CaseLibrary | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
@@ -99,6 +100,7 @@ class TaskModel:
         return {
             "task": self.task,
             "backbone": self.backbone,
+            "preprocess": self.preprocess,
             "head": self.head.to_dict(),
             "platt": self.platt.to_dict(),
             "threshold": self.threshold,
@@ -115,6 +117,7 @@ class TaskModel:
         return cls(
             task=d["task"],
             backbone=d.get("backbone", ""),
+            preprocess=d.get("preprocess", ""),
             head=LinearHead.from_dict(d["head"]),
             platt=Platt.from_dict(d["platt"]),
             threshold=float(d["threshold"]),
