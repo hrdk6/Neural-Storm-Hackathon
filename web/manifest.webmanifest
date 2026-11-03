@@ -1,0 +1,13 @@
+{
+  "name": "ClinicTune screening aid",
+  "short_name": "ClinicTune",
+  "description": "Site-adaptive screening aid for TB on chest X-rays and diabetic retinopathy on fundus photos. Decision support, not a diagnosis.",
+  "start_url": "./#screen",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F2F4F1",
+  "theme_color": "#5B3E96",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
