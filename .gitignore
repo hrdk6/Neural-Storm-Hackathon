@@ -27,3 +27,6 @@ build/
 
 # Local editor / agent tooling
 /.claude/
+
+# Playwright screenshots from UI review
+/.playwright-mcp/
