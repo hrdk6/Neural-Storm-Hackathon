@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import re
 import secrets
 import sys
@@ -47,6 +48,16 @@ from clinictune.site.ingest import PackError, read_pack, run_onboarding
 from clinictune.triage import Screener
 
 log = logging.getLogger("clinictune")
+
+# Explicit types: the OS registry (notably on Windows) can map .js to text/plain, which `nosniff` would block.
+for _ext, _type in (
+    (".js", "text/javascript"),
+    (".css", "text/css"),
+    (".svg", "image/svg+xml"),
+    (".woff2", "font/woff2"),
+    (".webmanifest", "application/manifest+json"),
+):
+    mimetypes.add_type(_type, _ext)
 
 SCREENS = Counter("clinictune_screenings_total", "Screenings", ["task", "decision", "reason"])
 SCREEN_LATENCY = Histogram(
