@@ -720,11 +720,6 @@ function tableView(head, rows, caption = "Show the numbers") {
       el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c) => (c instanceof Node ? el("td", {}, c) : el("td", { text: c }))))))));
 }
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-function niceMax(v) {
-  if (v <= 5) return 5;
-  const p = 10 ** Math.floor(Math.log10(v));
-  return Math.ceil(v / p) * p;
-}
 
 /* ================================================================ monitoring */
 let monSeq = 0;
@@ -793,14 +788,16 @@ function dailyChart(daily, days) {
   const W = 760, H = 240, L = 36, R = 8, T = 10, B = 26;
   const band = (W - L - R) / dates.length;
   const bw = Math.min(24, Math.max(3, band - 4));
-  const max = niceMax(Math.max(1, ...daily.map((d) => d.n)));
+  // Counts are whole numbers, so ticks are too: four equal integer steps.
+  const step = Math.max(1, Math.ceil(Math.max(1, ...daily.map((d) => d.n)) / 4));
+  const max = step * 4;
   const y = (v) => T + (H - T - B) * (1 - v / max);
-  const svg = sv("svg", { class: "viz", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Screening results per day, stacked by decision" });
+  const svg = sv("svg", { class: "viz viz-daily", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Screening results per day, stacked by decision" });
   const series = [["low_risk", "--fill-low"], ["uncertain", "--fill-unc"], ["refer", "--fill-refer"]];
   for (let t = 0; t <= 4; t++) {
-    const v = (max / 4) * t;
+    const v = step * t;
     svg.append(sv("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: cssVar("--rule"), "stroke-width": 1 }),
-      sv("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", text: Math.round(v) }));
+      sv("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", text: v }));
   }
   dates.forEach((date, i) => {
     const d = byDate[date];
