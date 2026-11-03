@@ -237,7 +237,7 @@ def cmd_evidence(a: argparse.Namespace) -> None:
     def rows(path: Path) -> list[dict]:
         if not path.exists():
             return []
-        with path.open(encoding="utf-8") as fh:
+        with path.open(encoding="utf-8-sig") as fh:
             return [{k: _num(v) for k, v in r.items()} for r in _csv.DictReader(fh)]
 
     ev: dict = {"loso": {}, "subgroups": {}, "shortcut": {}, "backbones": [], "datasets": {}}
