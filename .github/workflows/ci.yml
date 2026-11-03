@@ -18,6 +18,8 @@ jobs:
       - run: uv sync --frozen --python 3.12
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
+      - name: frontend syntax
+        run: node --check web/app.js && node --check web/sw.js
       - run: uv run pytest --cov=clinictune --cov-report=term-missing
       - name: no data or weights committed
         run: |
