@@ -1,42 +1,53 @@
-# Model card: ClinicTune bundle
+# Model card: ClinicTune bundle `clinictune-v1`
 
-Fill one copy of this card for every bundle you deploy. Most fields come straight from
-`models/<bundle>/manifest.json` and `tasks/<task>.json`.
+Exact identifiers (bundle id, backbone hashes, training counts) are in `models/clinictune-v1/manifest.json`
+and `tasks/<task>.json`. Validation tables are in [`reports/real/`](../reports/real) and inside the bundle as
+`evidence.json`, which the UI's Validation page renders.
 
 ## Intended use
-- **What:** a screening aid / decision support for TB on frontal chest X-rays, and for referable diabetic
-  retinopathy (ICDR grade ≥ 2) on colour fundus photos, in clinics where a specialist is not available on site.
-- **Who:** trained health workers and clinicians. Every output is reviewed by a clinician.
-- **Not for:** diagnosis, children (unless validated locally), lateral CXRs, ultra-widefield or
-  smartphone-adapter fundus images (unless onboarded with such images), or any decision without a
-  confirmatory test.
+- **What:** a screening aid and decision support for (a) possible tuberculosis on frontal chest X-rays and
+  (b) referable diabetic retinopathy (ICDR grade 2 or worse) on colour fundus photos, in clinics without an
+  on-site radiologist or ophthalmologist.
+- **Who:** trained health workers and medical officers. Every output is reviewed by a clinician and
+  confirmed with the reference test (sputum NAAT for TB; ophthalmology review for DR).
+- **Not for:** diagnosis; children (not validated); lateral chest X-rays; ultra-widefield or smartphone
+  fundus images unless a clinic onboards with them; any use at a clinic that has not been onboarded or whose
+  report card says "not ready".
 
-## Model
-- Backbone: `manifest.backbone.name` (frozen, ONNX, sha256 pinned).
-- Head: L2-regularised logistic regression on mean-pooled patch embeddings, with C chosen by patient-grouped CV.
-- Calibration: Platt scaling on held-out patients; site recalibration with a pseudo-observation prior.
-- Uncertainty: class-conditional split conformal (α in `tasks/<task>.json`), an embedding OOD detector,
-  and the quality gate.
+## Models
+| | TB | DR |
+|---|---|---|
+| Frozen backbone | RAD-DINO (Microsoft, MIT licence; research use per model card), ONNX at 392 px | DINOv2-base (Meta, Apache-2.0), ONNX at 224 px |
+| Head | L2 logistic regression on mean-pooled patch tokens; C by patient-grouped CV | same |
+| Calibration | Platt on held-out patients; per clinic: MAP Platt with a pseudo-observation prior | same |
+| Clinic adaptation | Optional residual linear layer, chosen only when cross-fitted ROC-AUC improves by at least 0.02 | same |
+| Uncertainty | Class-conditional split conformal (α = 0.1), embedding OOD detector | plus a learned gradability gate (DDR quality labels) |
+| Explanation | Exact per-patch contribution heatmap; six nearest confirmed reference cases | same |
 
-## Data
-- Training sites and datasets: `training.sites`, `training.datasets`, `training.official_splits_used`.
-- Licences: `docs/DATASETS.md`.
+## Training data (held-out "new clinics" excluded)
+- TB: Shenzhen (662) and TBX11K (2,200: all TB plus 700 healthy and 700 sick-but-not-TB). Montgomery (138)
+  is held out for onboarding.
+- DR: DDR (2,100 graded) and APTOS (3,662). IDRiD (516) is held out for onboarding. The gradability gate
+  uses 2,500 DDR images, 400 of them graded ungradable.
+- Licences and sources: [DATASETS.md](DATASETS.md).
 
 ## Performance
-- Internal held-out patients (training sites only): `metrics.overall`, `metrics.per_site`.
-- External / new-site performance: **only** from the site's onboarding report card and the LOSO
-  tables (`reports/*/loso.md`). Do not quote internal numbers as expected performance at a new clinic.
+Read the leave-one-hospital-out tables (README, `reports/real/`), not the internal held-out numbers.
+Internal numbers come from patients at the training hospitals and overstate performance at a new clinic.
+That is the whole point of this project.
 
 ## Known failure modes
-- Dataset shift (new scanner, exposure, population). The training-site calibration and conformal coverage
-  fail at new sites; onboarding is required.
-- Shortcut learning (markers, text, collimation). Run `clinictune shortcut` for every new bundle.
-- Low-prevalence sites with few labelled positives get mostly *Uncertain* outputs until more positives
-  are labelled.
+- **Dataset shift.** The training hospitals' calibration and conformal guarantee failed at all six held-out
+  hospitals. Onboarding is required.
+- **Subgroups.** At Shenzhen, positive-class coverage after recalibration was 82% for women against 94% for
+  men.
+- **Small clinics.** With few local positives the aid answers "Uncertain" more often, and intervals are wide.
+- **Shortcuts.** See the shortcut section of the Validation page for border-only and lungs-removed results.
 
 ## Sign-off
 | Role | Name | Date |
 |---|---|---|
 | Technical lead | | |
 | Clinical lead | | |
-| Language review (hi / kn) | | |
+| Language review (Hindi, Kannada) | | |
+| Data licences checked | | |
