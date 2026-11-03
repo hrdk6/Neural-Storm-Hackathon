@@ -1,0 +1,31 @@
+# Single-clinic deployment on one laptop / small server.
+#   1. put a model bundle in ./models/<name>  (e.g. `clinictune demo` creates ./models/demo)
+#   2. CLINICTUNE_API_KEY=$(openssl rand -hex 24) docker compose up -d
+#   3. open http://localhost:8000
+services:
+  clinictune:
+    build: .
+    image: clinictune:0.1.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"   # bind to localhost; put a TLS reverse proxy in front for network access
+    environment:
+      CLINICTUNE_BUNDLE_DIR: /models/bundle
+      CLINICTUNE_API_KEY: ${CLINICTUNE_API_KEY:?set CLINICTUNE_API_KEY}
+      CLINICTUNE_ORT_THREADS: ${CLINICTUNE_ORT_THREADS:-0}
+    volumes:
+      - ./models/${CLINICTUNE_BUNDLE:-demo}:/models/bundle:ro
+      - clinictune-data:/var/lib/clinictune
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+
+volumes:
+  clinictune-data:
