@@ -11,30 +11,195 @@ confirmed cases, and a plain-language note in English, Hindi or Kannada, printed
 > medical device. Every output must be reviewed by a qualified clinician and confirmed with the appropriate
 > test (sputum NAAT for TB, an ophthalmologist for diabetic retinopathy).
 
-What makes it different is that **it does not trust itself at a new clinic until it has been checked
-there.** A clinic uploads 50 to 100 images whose diagnosis was confirmed locally. ClinicTune then:
+![A chest X-ray on the lightbox and its screening slip](docs/screenshots/screen-result.png)
+
+*An unseen chest X-ray from Montgomery County (U.S. National Library of Medicine), screened with a clinic that
+is **not onboarded**. The aid refuses to be confident: the slip says **Uncertain**, because the image looks
+unlike what the model was calibrated on. The heatmap sits on the upper lung zones, not on the "LT ERECT"
+marker.*
+
+## Contents
+
+1. [The problem](#the-problem)
+2. [The idea: do not trust the model until it is checked at your clinic](#the-idea)
+3. [A tour of the interface](#a-tour-of-the-interface)
+4. [How it works](#how-it-works)
+5. [Results on real hospitals](#results-on-real-hospitals)
+6. [Architecture](#architecture)
+7. [Run it](#run-it)
+8. [Limitations and roadmap](#limitations)
+
+---
+
+## The problem
+
+AI screening models are usually reported with a single number measured at the hospitals they were built on.
+Deployed at a *different* clinic, with a different X-ray machine, camera and patient mix, they quietly get
+worse, and nobody at the clinic can tell.
+
+In our experiments, the confidence guarantee set at the training hospitals **failed at all 6 of 6 held-out
+hospitals**. One DR model had a good ROC-AUC of 0.88 and still missed most patients who needed an eye
+specialist (sensitivity 0.38). ClinicTune is built around that failure.
+
+## The idea
+
+**ClinicTune does not trust itself at a new clinic until it has been checked there.** A clinic uploads 50 to
+100 images whose diagnosis was confirmed locally. ClinicTune then:
+
 1. measures how different the clinic is from the training hospitals;
 2. shows how badly the unadapted model would have done there;
 3. fits the clinic's own settings, and a small adaptation layer when that clearly helps;
-4. prints a report card with an honest verdict.
+4. prints a report card with an honest verdict, including when the answer is "use with caution".
 
-![A chest X-ray on the lightbox and its screening slip stamped Refer](docs/screenshots/screen-tb.jpg)
+```mermaid
+flowchart LR
+    A["Public hospital data<br/>(6 hospitals, China / India / USA)"] --> B["Frozen foundation model<br/>RAD-DINO or DINOv2, ONNX"]
+    B --> C["Shared model bundle<br/>head, calibration, conformal,<br/>familiarity check, case library"]
+    C --> D{"New clinic"}
+    E["50 to 100 locally<br/>confirmed images (zip)"] --> D
+    D --> F["Onboarding<br/>shift test, before / after,<br/>two strategies compared"]
+    F --> G["Clinic settings<br/>(versioned, roll-back-able)"]
+    G --> H["Screening at the clinic<br/>Refer / Low risk / Uncertain"]
+    H --> I["Monitoring and alerts<br/>confirmed outcomes feed back"]
+    I -.->|"drift or missed case"| D
+```
 
-*An unseen chest X-ray from a clinic onboarded with 99 local images. The aid stamps **Refer**. The exact
-heatmap concentrates on the upper lung zones, not on the "LT ERECT" or "R" markers. Below the slip are the
-most similar confirmed cases. Image: Montgomery County set, U.S. National Library of Medicine.*
+---
 
-| | |
-|---|---|
-| ![Fundus photo screened with a Kannada note](docs/screenshots/screen-dr-kannada.jpg) | ![Today's queue sorted by priority](docs/screenshots/queue.jpg) |
-| *A fundus photo from a clinic in Nanded, India, with the note in Kannada. All seven quality checks passed, including the learned gradability model. Image: IDRiD, Porwal et al., CC BY 4.0.* | *A morning's batch sorts itself so referrals rise to the top.* |
+## A tour of the interface
 
-![Clinic report card](docs/screenshots/report-card.jpg)
+The UI is a no-build, offline-capable web app with self-hosted fonts (Latin, Devanagari and Kannada).
 
-*The report card after onboarding Montgomery County. Specificity was 15% with the training hospitals'
-settings; the automatically chosen local adaptation layer brings it to 77% with sensitivity at 89.7%,
-cross-fitted.
-The verdict still says "use with caution", and why.*
+### Screen
+
+Drop, choose or paste one image. The lightbox sweeps a scan line while the image is read, then a stamp lands
+on the screening slip with the next step, the reasons, the heatmap and the six most similar confirmed cases.
+**Print slip** gives a one-page referral for the patient's OPD card.
+
+![The empty Screen tab](docs/screenshots/screen-empty.png)
+
+### Queue
+
+Screen a whole morning's batch. The queue sorts itself so referrals rise to the top, and exports to CSV.
+
+![Today's queue sorted by priority](docs/screenshots/queue.png)
+
+### Clinics and the report card
+
+Register a clinic, onboard it with a zip, watch the five onboarding steps run, then read the report card.
+Every onboarding is a new version, and any version can be rolled back to.
+
+![Registered clinics and the onboarding form](docs/screenshots/clinics.png)
+
+![Clinic report card for Montgomery County](docs/screenshots/report-card.png)
+
+*The report card after onboarding Montgomery County with 99 local images. With the training hospitals'
+settings specificity was 15%. The cross-fitted local adaptation layer lifts ROC-AUC from 0.66 to 0.93 and
+specificity to 77%, with sensitivity at 89.7%. The verdict is still **use with caution**, and it says why.*
+
+### Monitoring
+
+Results per day, referral, uncertain and quality-failure rates, and observed sensitivity and specificity once
+confirmatory results are entered. Alerts fire on unfamiliar images (equipment change), quality failures, a
+significant shift in referral rate, and any confirmed-positive patient who was called low risk.
+
+![Monitoring tab](docs/screenshots/monitoring.png)
+
+### Validation
+
+The evidence, rendered from the model bundle: per-hospital charts, coverage before and after, every number,
+backbone comparison, shortcut tests and subgroups. It includes the project's own negative results.
+
+![Validation tab](docs/screenshots/validation.png)
+
+---
+
+## How it works
+
+### One screening, end to end
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Clinician
+    participant UI as Web UI
+    participant API as FastAPI service
+    participant Q as Quality gate
+    participant M as ONNX backbone
+    participant S as Clinic settings
+    participant DB as SQLite audit log
+
+    C->>UI: drop image, choose task and clinic
+    UI->>API: POST /v1/screen
+    API->>Q: rules (blur, exposure, modality, lungs visible)
+    Q-->>API: pass or retake (+ learned gradability for fundus)
+    API->>M: standardised image
+    M-->>API: patch tokens, mean embedding
+    API->>S: familiarity check, head + adaptation layer, Platt
+    S-->>API: score, 90% confidence set
+    API->>API: decision table, exact heatmap, similar cases, note
+    API->>DB: fingerprint, decision, versions (no image stored)
+    API-->>UI: slip
+    UI-->>C: stamp, reasons, heatmap, printable slip
+```
+
+### How the decision is made
+
+```mermaid
+flowchart TD
+    S([Image in]) --> Q{"Quality gate<br/>passed?"}
+    Q -- no --> U1["Uncertain: retake"]
+    Q -- yes --> F{"Familiar to this<br/>clinic's calibration?"}
+    F -- no --> U2["Uncertain: escalate"]
+    F -- yes --> C{"90% confidence set"}
+    C -- "{refer}" --> R1["Refer"]
+    C -- "{refer, low risk}" --> T{"Score at or above<br/>the clinic's line?"}
+    T -- yes --> R2["Refer<br/>(sensitivity first)"]
+    T -- no --> U3["Uncertain: escalate"]
+    C -- "{low risk}" --> L{"Score below<br/>the line?"}
+    L -- yes --> LR["Low risk"]
+    L -- no --> U4["Uncertain: escalate"]
+    C -- "empty or other" --> U5["Uncertain: escalate"]
+```
+
+"Low risk" needs the score and the confidence check to agree, because missing disease is the costlier error.
+
+### Onboarding a clinic
+
+```mermaid
+flowchart LR
+    Z["Zip: images +<br/>labels.csv"] --> I["1. Ingest<br/>(zip-slip and zip-bomb safe)"]
+    I --> Qc["2. Quality check"]
+    Qc --> Sh["3. Shift test<br/>domain classifier AUC, MMD"]
+    Sh --> B["4. Before<br/>training hospitals' settings<br/>on local labels"]
+    B --> X["5. Compare, cross-fitted<br/>A: recalibrate only<br/>B: local adaptation layer"]
+    X --> W{"B beats A by<br/>at least +0.02 ROC-AUC?"}
+    W -- yes --> DB["Deploy B"]
+    W -- no --> DA["Deploy A"]
+    DB --> V["New settings version<br/>+ report card + verdict"]
+    DA --> V
+```
+
+Recalibration alone (Platt scaling) is monotone, so it cannot change ROC-AUC. The local adaptation layer can,
+and is deployed only when it clearly wins out of fold.
+
+### Heatmaps that are exact
+
+The image embedding is the mean of the backbone's patch tokens, and every layer on top of it (the training
+head and the clinic's adaptation layer) is linear. The score therefore splits **exactly** into per-patch
+contributions, computed in one forward pass. The heatmap explains this model's score; the UI states that it
+does not outline disease.
+
+### Fundus standardisation
+
+```mermaid
+flowchart LR
+    P["Raw fundus photo"] --> Cr["Crop to retinal field"] --> Ce["Centre in a square"] --> Rs["Resize"] --> Mk["Mask outside the circle"] --> Mo["Model"]
+    Mo --> Hm["Heatmap"] --> Bk["Mapped back onto the original photo"]
+```
+
+The same step runs in training, onboarding and serving. It exists because we found a camera shortcut (see
+below).
 
 ---
 
@@ -48,6 +213,22 @@ The protocol is **leave one hospital out**: train on the other hospitals, then t
 held-out hospital is split by patient into a pool the "clinic" labels from and a test half that is never
 used for fitting. Results are the mean of 10 repeats. The full tables, with standard deviations, are in
 [`reports/real/`](reports/real). Reproduce everything with [`scripts/reproduce.sh`](scripts/reproduce.sh).
+
+```mermaid
+flowchart LR
+    subgraph Train["Train on the other hospitals"]
+        T1["Hospital A"]
+        T2["Hospital B"]
+    end
+    H["Held-out hospital C<br/>never seen"] --> Sp["Patient-level split"]
+    Sp --> Pool["Label pool<br/>50 or 100 labels<br/>= the clinic's onboarding"]
+    Sp --> Test["Test half<br/>never used for fitting"]
+    Train --> Mdl["Shared model"]
+    Mdl --> Ad["Adapt with the pool"]
+    Pool --> Ad
+    Ad --> Ev["Evaluate on test half<br/>10 repeats"]
+    Test --> Ev
+```
 
 ### Tuberculosis: RAD-DINO chest X-ray encoder, CPU only
 
@@ -137,40 +318,30 @@ A full screening, from decoding a 20-megapixel X-ray through the quality gate an
 | **Monitoring** | Results per day, referral, uncertain and quality-failure rates, and observed sensitivity and specificity once confirmatory results are entered. **Alerts** fire on unfamiliar images (equipment change), quality failures, a significant shift in referral rate (two-proportion test), and any confirmed-positive patient who was called low risk. The screening log downloads as CSV. |
 | **Validation** | The evidence above, rendered from the model bundle: per-hospital charts, coverage before and after, every number, backbone comparison, shortcut tests and subgroups. |
 
-### How the decision is made
-
-```
-quality gate failed (rules or learned gradability)  -> Uncertain: retake
-image unlike anything this clinic was calibrated on -> Uncertain: escalate
-confidence set = {refer}                            -> Refer
-confidence set = {refer, low risk}, score >= line   -> Refer   (sensitivity first)
-confidence set = {low risk}, score < line           -> Low risk
-anything else                                       -> Uncertain: escalate
-```
-
-"Low risk" needs the score and the confidence check to agree, because missing disease is the costlier error.
-
-### Heatmaps that are exact
-
-The image embedding is the mean of the backbone's patch tokens, and every layer on top of it (the training
-head and the clinic's adaptation layer) is linear. The score therefore splits **exactly** into per-patch
-contributions, computed in one forward pass. The heatmap explains this model's score; the UI states that it
-does not outline disease.
-
 ---
 
 ## Architecture
 
-```
-offline, once                                         serving, CPU only
-──────────────────────────────────────────            ─────────────────────────────────────────────────
-clinictune fetch      public data, resumable         upload ─► quality gate (rules + learned gradability)
-clinictune export     RAD-DINO / DINOv2 ─► ONNX            ─► task backbone (ONNX Runtime, sha256-pinned)
-clinictune loso       leave-one-hospital-out               ─► familiarity check (embedding OOD)
-clinictune train      heads, calibration, conformal,       ─► head + clinic adaptation layer + Platt
-                      OOD, gradability, case library       ─► class-conditional conformal ─► decision
-clinictune shortcut   border / lungs / retina blanked      ─► exact heatmap, similar cases, note (en/hi/kn)
-clinictune evidence   validation tables into bundle   SQLite: clinics, settings versions, jobs, audit log
+```mermaid
+flowchart TB
+    subgraph Offline["Offline, once (CLI)"]
+        direction LR
+        f["fetch<br/>public data, resumable"] --> ex["export-backbone<br/>RAD-DINO / DINOv2 to ONNX"]
+        ex --> lo["loso<br/>leave-one-hospital-out"]
+        lo --> tr["train<br/>heads, calibration, conformal,<br/>OOD, gradability, case library"]
+        tr --> sc["shortcut<br/>border / lungs / retina blanked"]
+        sc --> ev["evidence + pack<br/>validation tables into bundle"]
+    end
+    ev --> BND[("Model bundle<br/>sha256-pinned")]
+    subgraph Serve["Serving, CPU only"]
+        direction LR
+        WEB["web/<br/>no-build UI"] --> API["FastAPI<br/>api/app.py"]
+        API --> PIPE["pipeline.py<br/>quality, ONNX, OOD, head,<br/>conformal, decision"]
+        API --> SITE["site/<br/>onboarding, report card"]
+        API --> STORE[("SQLite<br/>clinics, versions,<br/>jobs, audit log")]
+        API --> MET["Prometheus /metrics"]
+    end
+    BND --> PIPE
 ```
 
 | Path | What |
@@ -185,6 +356,43 @@ clinictune evidence   validation tables into bundle   SQLite: clinics, settings 
 
 Embeddings for training are extracted **with the same ONNX model and preprocessing code used in production**,
 so there is no train/serve skew.
+
+### Data model
+
+```mermaid
+erDiagram
+    SITES ||--o{ CALIBRATIONS : "versions"
+    SITES ||--o{ SCREENINGS : "logs"
+    SITES ||--o{ JOBS : "onboarding runs"
+    SITES {
+        string site_id PK
+        string name
+    }
+    CALIBRATIONS {
+        string task PK
+        int version PK
+        string bundle_id
+        bool active
+        json calibration
+        json report
+    }
+    SCREENINGS {
+        string request_id PK
+        string image_sha256 "fingerprint only, no image"
+        string decision
+        float probability
+        bool gate_passed
+        bool ood_flagged
+    }
+    JOBS {
+        string job_id PK
+        string task
+        string status
+        float progress
+    }
+```
+
+*Abridged from [`store.py`](src/clinictune/api/store.py).*
 
 ---
 
@@ -220,6 +428,16 @@ uv run clinictune serve
 
 The demo uses cartoon images and a random-projection backbone. It exercises every code path, means nothing
 clinically, and the UI says so on every page.
+
+### CLI
+
+| Command | What it does |
+|---|---|
+| `fetch`, `manifest`, `licences` | download public datasets, build manifests, show licences |
+| `export-backbone`, `benchmark` | export a backbone to ONNX, time it on CPU |
+| `train`, `loso`, `shortcut` | train a bundle, leave-one-hospital-out, shortcut tests |
+| `pack`, `evidence` | make an onboarding pack, bundle validation evidence |
+| `demo`, `onboard`, `serve` | synthetic demo, onboard from the command line, run API and UI |
 
 ### Deploy
 
