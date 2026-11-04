@@ -53,15 +53,23 @@ specialist (sensitivity 0.38). ClinicTune is built around that failure.
 
 ```mermaid
 flowchart LR
-    A["Public hospital data<br/>(6 hospitals, China / India / USA)"] --> B["Frozen foundation model<br/>RAD-DINO or DINOv2, ONNX"]
-    B --> C["Shared model bundle<br/>head, calibration, conformal,<br/>familiarity check, case library"]
-    C --> D{"New clinic"}
-    E["50 to 100 locally<br/>confirmed images (zip)"] --> D
-    D --> F["Onboarding<br/>shift test, before / after,<br/>two strategies compared"]
-    F --> G["Clinic settings<br/>(versioned, roll-back-able)"]
-    G --> H["Screening at the clinic<br/>Refer / Low risk / Uncertain"]
-    H --> I["Monitoring and alerts<br/>confirmed outcomes feed back"]
+    classDef data fill:#DCEBFB,stroke:#2A78D6,stroke-width:2px,color:#1B2A41
+    classDef model fill:#E9E0FA,stroke:#7A55C7,stroke-width:2px,color:#1B2A41
+    classDef good fill:#D7F0DE,stroke:#1E7B3F,stroke-width:2px,color:#1B2A41
+    classDef warn fill:#FFF0C2,stroke:#B87A00,stroke-width:2px,color:#1B2A41
+    classDef bad fill:#FBE0DD,stroke:#C8302F,stroke-width:2px,color:#1B2A41
+    classDef info fill:#D5F0F0,stroke:#17848A,stroke-width:2px,color:#1B2A41
+    classDef gate fill:#FFFFFF,stroke:#1B2A41,stroke-width:2px,color:#1B2A41
+    A["Public hospital data<br/>6 hospitals, China / India / USA"]:::data --> B["Frozen foundation model<br/>RAD-DINO or DINOv2, ONNX"]:::model
+    B --> C["Shared model bundle<br/>head, calibration, conformal,<br/>familiarity check, case library"]:::model
+    C --> D{"New clinic"}:::gate
+    E["50 to 100 locally<br/>confirmed images (zip)"]:::data --> D
+    D --> F["Onboarding<br/>shift test, before / after,<br/>two strategies compared"]:::info
+    F --> G["Clinic settings<br/>versioned, roll-back-able"]:::good
+    G --> H["Screening at the clinic<br/>Refer / Low risk / Uncertain"]:::good
+    H --> I["Monitoring and alerts<br/>confirmed outcomes feed back"]:::warn
     I -.->|"drift or missed case"| D
+    linkStyle default stroke:#1E7B3F,stroke-width:2px
 ```
 
 ---
@@ -119,6 +127,7 @@ backbone comparison, shortcut tests and subgroups. It includes the project's own
 ### One screening, end to end
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'actorBkg':'#D7F0DE','actorBorder':'#1E7B3F','actorTextColor':'#1B2A41','signalColor':'#2E9A5C','signalTextColor':'#2E9A5C','noteBkgColor':'#FFF0C2','noteTextColor':'#1B2A41','activationBkgColor':'#DCEBFB','sequenceNumberColor':'#FFFFFF'}}}%%
 sequenceDiagram
     autonumber
     actor C as Clinician
@@ -129,37 +138,56 @@ sequenceDiagram
     participant S as Clinic settings
     participant DB as SQLite audit log
 
+    rect rgba(42,120,214,0.15)
+    Note over C,API: Request
     C->>UI: drop image, choose task and clinic
     UI->>API: POST /v1/screen
+    end
+    rect rgba(184,122,0,0.15)
+    Note over API,Q: Safety first
     API->>Q: rules (blur, exposure, modality, lungs visible)
     Q-->>API: pass or retake (+ learned gradability for fundus)
+    end
+    rect rgba(122,85,199,0.15)
+    Note over API,S: Model
     API->>M: standardised image
     M-->>API: patch tokens, mean embedding
     API->>S: familiarity check, head + adaptation layer, Platt
     S-->>API: score, 90% confidence set
+    end
+    rect rgba(30,123,63,0.15)
+    Note over API,C: Answer
     API->>API: decision table, exact heatmap, similar cases, note
     API->>DB: fingerprint, decision, versions (no image stored)
     API-->>UI: slip
     UI-->>C: stamp, reasons, heatmap, printable slip
+    end
 ```
 
 ### How the decision is made
 
 ```mermaid
 flowchart TD
-    S([Image in]) --> Q{"Quality gate<br/>passed?"}
-    Q -- no --> U1["Uncertain: retake"]
-    Q -- yes --> F{"Familiar to this<br/>clinic's calibration?"}
-    F -- no --> U2["Uncertain: escalate"]
-    F -- yes --> C{"90% confidence set"}
-    C -- "{refer}" --> R1["Refer"]
-    C -- "{refer, low risk}" --> T{"Score at or above<br/>the clinic's line?"}
-    T -- yes --> R2["Refer<br/>(sensitivity first)"]
-    T -- no --> U3["Uncertain: escalate"]
-    C -- "{low risk}" --> L{"Score below<br/>the line?"}
-    L -- yes --> LR["Low risk"]
-    L -- no --> U4["Uncertain: escalate"]
-    C -- "empty or other" --> U5["Uncertain: escalate"]
+    classDef data fill:#DCEBFB,stroke:#2A78D6,stroke-width:2px,color:#1B2A41
+    classDef model fill:#E9E0FA,stroke:#7A55C7,stroke-width:2px,color:#1B2A41
+    classDef good fill:#D7F0DE,stroke:#1E7B3F,stroke-width:2px,color:#1B2A41
+    classDef warn fill:#FFF0C2,stroke:#B87A00,stroke-width:2px,color:#1B2A41
+    classDef bad fill:#FBE0DD,stroke:#C8302F,stroke-width:2px,color:#1B2A41
+    classDef info fill:#D5F0F0,stroke:#17848A,stroke-width:2px,color:#1B2A41
+    classDef gate fill:#FFFFFF,stroke:#1B2A41,stroke-width:2px,color:#1B2A41
+    S([Image in]):::data --> Q{"Quality gate<br/>passed?"}:::gate
+    Q -- no --> U1["Uncertain: retake"]:::warn
+    Q -- yes --> F{"Familiar to this<br/>clinic's calibration?"}:::gate
+    F -- no --> U2["Uncertain: escalate"]:::warn
+    F -- yes --> C{"90% confidence set"}:::gate
+    C -- "{refer}" --> R1["REFER"]:::bad
+    C -- "{refer, low risk}" --> T{"Score at or above<br/>the clinic's line?"}:::gate
+    T -- yes --> R2["REFER<br/>sensitivity first"]:::bad
+    T -- no --> U3["Uncertain: escalate"]:::warn
+    C -- "{low risk}" --> L{"Score below<br/>the line?"}:::gate
+    L -- yes --> LR["LOW RISK"]:::good
+    L -- no --> U4["Uncertain: escalate"]:::warn
+    C -- "empty or other" --> U5["Uncertain: escalate"]:::warn
 ```
 
 "Low risk" needs the score and the confidence check to agree, because missing disease is the costlier error.
@@ -168,16 +196,24 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Z["Zip: images +<br/>labels.csv"] --> I["1. Ingest<br/>(zip-slip and zip-bomb safe)"]
-    I --> Qc["2. Quality check"]
-    Qc --> Sh["3. Shift test<br/>domain classifier AUC, MMD"]
-    Sh --> B["4. Before<br/>training hospitals' settings<br/>on local labels"]
-    B --> X["5. Compare, cross-fitted<br/>A: recalibrate only<br/>B: local adaptation layer"]
-    X --> W{"B beats A by<br/>at least +0.02 ROC-AUC?"}
-    W -- yes --> DB["Deploy B"]
-    W -- no --> DA["Deploy A"]
-    DB --> V["New settings version<br/>+ report card + verdict"]
+    classDef data fill:#DCEBFB,stroke:#2A78D6,stroke-width:2px,color:#1B2A41
+    classDef model fill:#E9E0FA,stroke:#7A55C7,stroke-width:2px,color:#1B2A41
+    classDef good fill:#D7F0DE,stroke:#1E7B3F,stroke-width:2px,color:#1B2A41
+    classDef warn fill:#FFF0C2,stroke:#B87A00,stroke-width:2px,color:#1B2A41
+    classDef bad fill:#FBE0DD,stroke:#C8302F,stroke-width:2px,color:#1B2A41
+    classDef info fill:#D5F0F0,stroke:#17848A,stroke-width:2px,color:#1B2A41
+    classDef gate fill:#FFFFFF,stroke:#1B2A41,stroke-width:2px,color:#1B2A41
+    Z["Zip: images +<br/>labels.csv"]:::data --> I["Step 1: Ingest<br/>zip-slip and zip-bomb safe"]:::info
+    I --> Qc["Step 2: Quality check"]:::warn
+    Qc --> Sh["Step 3: Shift test<br/>domain classifier AUC, MMD"]:::model
+    Sh --> B["Step 4: Before<br/>training hospitals' settings<br/>on local labels"]:::bad
+    B --> X["Step 5: Compare<br/>cross-fitted<br/>A: recalibrate only<br/>B: local adaptation layer"]:::model
+    X --> W{"B beats A by at least<br/>+0.02 ROC-AUC?"}:::gate
+    W -- yes --> DB["Deploy B"]:::good
+    W -- no --> DA["Deploy A"]:::good
+    DB --> V["New settings version<br/>+ report card + verdict"]:::good
     DA --> V
+    linkStyle default stroke:#1E7B3F,stroke-width:2px
 ```
 
 Recalibration alone (Platt scaling) is monotone, so it cannot change ROC-AUC. The local adaptation layer can,
@@ -194,8 +230,16 @@ does not outline disease.
 
 ```mermaid
 flowchart LR
-    P["Raw fundus photo"] --> Cr["Crop to retinal field"] --> Ce["Centre in a square"] --> Rs["Resize"] --> Mk["Mask outside the circle"] --> Mo["Model"]
-    Mo --> Hm["Heatmap"] --> Bk["Mapped back onto the original photo"]
+    classDef data fill:#DCEBFB,stroke:#2A78D6,stroke-width:2px,color:#1B2A41
+    classDef model fill:#E9E0FA,stroke:#7A55C7,stroke-width:2px,color:#1B2A41
+    classDef good fill:#D7F0DE,stroke:#1E7B3F,stroke-width:2px,color:#1B2A41
+    classDef warn fill:#FFF0C2,stroke:#B87A00,stroke-width:2px,color:#1B2A41
+    classDef bad fill:#FBE0DD,stroke:#C8302F,stroke-width:2px,color:#1B2A41
+    classDef info fill:#D5F0F0,stroke:#17848A,stroke-width:2px,color:#1B2A41
+    classDef gate fill:#FFFFFF,stroke:#1B2A41,stroke-width:2px,color:#1B2A41
+    P["Raw fundus photo"]:::data --> Cr["Crop to retinal field"]:::info --> Ce["Centre in a square"]:::info --> Rs["Resize"]:::info --> Mk["Mask outside the circle"]:::info --> Mo["Model"]:::model
+    Mo --> Hm["Heatmap"]:::warn --> Bk["Mapped back onto<br/>the original photo"]:::good
+    linkStyle default stroke:#1E7B3F,stroke-width:2px
 ```
 
 The same step runs in training, onboarding and serving. It exists because we found a camera shortcut (see
@@ -216,18 +260,27 @@ used for fitting. Results are the mean of 10 repeats. The full tables, with stan
 
 ```mermaid
 flowchart LR
+    classDef data fill:#DCEBFB,stroke:#2A78D6,stroke-width:2px,color:#1B2A41
+    classDef model fill:#E9E0FA,stroke:#7A55C7,stroke-width:2px,color:#1B2A41
+    classDef good fill:#D7F0DE,stroke:#1E7B3F,stroke-width:2px,color:#1B2A41
+    classDef warn fill:#FFF0C2,stroke:#B87A00,stroke-width:2px,color:#1B2A41
+    classDef bad fill:#FBE0DD,stroke:#C8302F,stroke-width:2px,color:#1B2A41
+    classDef info fill:#D5F0F0,stroke:#17848A,stroke-width:2px,color:#1B2A41
+    classDef gate fill:#FFFFFF,stroke:#1B2A41,stroke-width:2px,color:#1B2A41
     subgraph Train["Train on the other hospitals"]
-        T1["Hospital A"]
-        T2["Hospital B"]
+        T1["Hospital A"]:::data
+        T2["Hospital B"]:::data
     end
-    H["Held-out hospital C<br/>never seen"] --> Sp["Patient-level split"]
-    Sp --> Pool["Label pool<br/>50 or 100 labels<br/>= the clinic's onboarding"]
-    Sp --> Test["Test half<br/>never used for fitting"]
-    Train --> Mdl["Shared model"]
-    Mdl --> Ad["Adapt with the pool"]
+    style Train fill:#EEF5FD,stroke:#2A78D6,stroke-dasharray: 5 5,color:#1B2A41
+    H["Held-out hospital C<br/>never seen"]:::bad --> Sp["Patient-level split"]:::gate
+    Sp --> Pool["Label pool<br/>50 or 100 labels<br/>= the clinic's onboarding"]:::warn
+    Sp --> Test["Test half<br/>never used for fitting"]:::info
+    Train --> Mdl["Shared model"]:::model
+    Mdl --> Ad["Adapt with the pool"]:::model
     Pool --> Ad
-    Ad --> Ev["Evaluate on test half<br/>10 repeats"]
+    Ad --> Ev["Evaluate on test half<br/>10 repeats"]:::good
     Test --> Ev
+    linkStyle default stroke:#1E7B3F,stroke-width:2px
 ```
 
 ### Tuberculosis: RAD-DINO chest X-ray encoder, CPU only
@@ -324,24 +377,34 @@ A full screening, from decoding a 20-megapixel X-ray through the quality gate an
 
 ```mermaid
 flowchart TB
+    classDef data fill:#DCEBFB,stroke:#2A78D6,stroke-width:2px,color:#1B2A41
+    classDef model fill:#E9E0FA,stroke:#7A55C7,stroke-width:2px,color:#1B2A41
+    classDef good fill:#D7F0DE,stroke:#1E7B3F,stroke-width:2px,color:#1B2A41
+    classDef warn fill:#FFF0C2,stroke:#B87A00,stroke-width:2px,color:#1B2A41
+    classDef bad fill:#FBE0DD,stroke:#C8302F,stroke-width:2px,color:#1B2A41
+    classDef info fill:#D5F0F0,stroke:#17848A,stroke-width:2px,color:#1B2A41
+    classDef gate fill:#FFFFFF,stroke:#1B2A41,stroke-width:2px,color:#1B2A41
     subgraph Offline["Offline, once (CLI)"]
         direction LR
-        f["fetch<br/>public data, resumable"] --> ex["export-backbone<br/>RAD-DINO / DINOv2 to ONNX"]
-        ex --> lo["loso<br/>leave-one-hospital-out"]
-        lo --> tr["train<br/>heads, calibration, conformal,<br/>OOD, gradability, case library"]
-        tr --> sc["shortcut<br/>border / lungs / retina blanked"]
-        sc --> ev["evidence + pack<br/>validation tables into bundle"]
+        f["fetch<br/>public data, resumable"]:::data --> ex["export-backbone<br/>RAD-DINO / DINOv2<br/>to ONNX"]:::model
+        ex --> lo["loso<br/>leave-one-hospital-out"]:::info
+        lo --> tr["train<br/>heads, calibration,<br/>conformal, OOD,<br/>gradability, case library"]:::model
+        tr --> sc["shortcut<br/>border / lungs /<br/>retina blanked"]:::warn
+        sc --> ev["evidence + pack<br/>validation tables<br/>into bundle"]:::good
     end
-    ev --> BND[("Model bundle<br/>sha256-pinned")]
+    style Offline fill:#F3F8FE,stroke:#2A78D6,stroke-width:2px,color:#1B2A41
+    ev --> BND[("Model bundle<br/>sha256-pinned")]:::bad
     subgraph Serve["Serving, CPU only"]
         direction LR
-        WEB["web/<br/>no-build UI"] --> API["FastAPI<br/>api/app.py"]
-        API --> PIPE["pipeline.py<br/>quality, ONNX, OOD, head,<br/>conformal, decision"]
-        API --> SITE["site/<br/>onboarding, report card"]
-        API --> STORE[("SQLite<br/>clinics, versions,<br/>jobs, audit log")]
-        API --> MET["Prometheus /metrics"]
+        WEB["web/<br/>no-build UI"]:::data --> API["FastAPI<br/>api/app.py"]:::good
+        API --> PIPE["pipeline.py<br/>quality, ONNX, OOD,<br/>head, conformal, decision"]:::model
+        API --> SITE["site/<br/>onboarding, report card"]:::info
+        API --> STORE[("SQLite<br/>clinics, versions,<br/>jobs, audit log")]:::warn
+        API --> MET["Prometheus /metrics"]:::gate
     end
+    style Serve fill:#F2FAF4,stroke:#1E7B3F,stroke-width:2px,color:#1B2A41
     BND --> PIPE
+    linkStyle default stroke:#1E7B3F,stroke-width:2px
 ```
 
 | Path | What |
@@ -360,6 +423,7 @@ so there is no train/serve skew.
 ### Data model
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#D7F0DE','primaryBorderColor':'#1E7B3F','primaryTextColor':'#1B2A41','lineColor':'#1E7B3F','secondaryColor':'#DCEBFB','tertiaryColor':'#FFF0C2','attributeBackgroundColorOdd':'#F2FAF4','attributeBackgroundColorEven':'#DCEBFB'}}}%%
 erDiagram
     SITES ||--o{ CALIBRATIONS : "versions"
     SITES ||--o{ SCREENINGS : "logs"
